@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FAULT LINES CAPITAL | Intelligence OS</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;700&family=IBM+Plex+Mono:wght@400;500&family=Rajdhani:wght@600;700&family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+</head>
+<body class="locked">
+
+    <div class="cursor-dot"></div>
+    <div class="cursor-ring"></div>
+    <canvas id="neural-canvas"></canvas>
+    <div class="scanline"></div>
+
+    <!-- HYPER-JUMP TRANSITION OVERLAY -->
+    <div id="transition-overlay" class="transition-overlay">
+    <div class="trans-globe-wrap">
+        <canvas id="trans-globe" width="400" height="400"></canvas>
+    </div>
+    <div class="trans-direction-hint" id="trans-hint"></div>
+</div>
+
+
+    <!-- SPLASH SCREEN -->
+    <div id="splash-screen" class="splash-screen">
+        <div class="splash-content">
+            <img src="logo-main.png" id="splash-logo" class="splash-logo">
+            <h1 id="typewriter-title" class="brand-title"></h1>
+            <div class="boot-sequence" id="boot-logs"></div>
+            <div class="progress-container"><div class="progress-bar" id="progress-bar"></div></div>
+            <button id="init-btn" class="init-btn" onclick="startBoot()">● CLICK TO INITIALIZE SYSTEM</button>
+        </div>
+    </div>
+
+    <!-- TOP NAVIGATION -->
+    <header class="top-nav">
+        <div class="nav-left">
+            <img src="logo-main.png" class="nav-logo">
+            <div class="nav-brand">
+                <span class="brand-main">FAULT LINES</span>
+                <span class="brand-sub">CAPITAL</span>
+            </div>
+        </div>
+        <div class="nav-links">
+            <button class="nav-item active" onclick="switchTab('ai', this)">AI HUB</button>
+            <button class="nav-item" onclick="switchTab('geopolitics', this)">GEOPOLITICS</button>
+            <button class="nav-item" onclick="switchTab('finance', this)">FINANCE</button>
+            <button class="nav-item" onclick="switchTab('map', this)">WAR ROOM</button>
+        </div>
+        <div class="nav-right">
+            <div class="status-box"><span class="dot"></span> <span id="live-clock"></span></div>
+        </div>
+    </header>
+
+    <!-- NAVIGATION ARROWS -->
+    <div class="nav-arrow left" onclick="cycleTab(-1)"><span>←</span></div>
+    <div class="nav-arrow right" onclick="cycleTab(1)"><span>→</span></div>
+
+    <main class="main-content">
+        <header class="top-bar">
+            <h1 id="current-tab-title">INTELLIGENCE HUB</h1>
+            <div class="date-time" id="hdr-date"></div>
+        </header>
+
+        <!-- AI HUB -->
+        <section id="ai-view" class="view-section active">
+            <div class="ai-hero">
+                <div class="globe-container">
+    <canvas id="globe-canvas" width="600" height="600"></canvas>
+    <canvas id="molecule-canvas"></canvas>
+</div>
+
+                <div class="ai-welcome">
+                    <h2 class="glitch-text">SYSTEMS ONLINE</h2>
+                    <p>Welcome, Operator. Use the navigation or arrows to begin the briefing.</p>
+                    <div class="ai-status-grid">
+                        <div class="status-item"><span>MAP:</span> <span class="active">ACTIVE</span></div>
+                        <div class="status-item"><span>DATA:</span> <span class="active">SYNCED</span></div>
+                        <div class="status-item"><span>SEC:</span> <span class="active">ENCRYPTED</span></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- GEOPOLITICS -->
+        <section id="geopolitics-view" class="view-section hidden">
+            <div class="geo-container">
+                <div class="live-intel-box">
+                    <div class="terminal-header">LIVE_GEO_INTEL_STREAM</div>
+                    <div id="geo-news-feed" class="terminal-body"></div>
+                </div>
+                <div class="feed-grid" id="geo-feed"></div>
+            </div>
+        </section>
+
+        <!-- FINANCE -->
+        <section id="finance-view" class="view-section hidden">
+            <div class="fin-container">
+                <div class="live-intel-box">
+                    <div class="terminal-header">REALTIME_MARKET_SENSORS</div>
+                    <div id="fin-stock-grid" class="stock-grid"></div>
+                </div>
+                <div class="chart-grid">
+                    <div class="chart-box"><div id="tv_chart1"></div></div>
+                    <div class="chart-box"><div id="tv_chart2"></div></div>
+                </div>
+                <div class="feed-grid" id="fin-feed"></div>
+            </div>
+        </section>
+
+        <!-- WAR ROOM -->
+        <section id="map-view" class="view-section hidden">
+    <div class="map-container">
+        <!-- 2D/3D Toggle -->
+        <div class="map-toggle">
+            <button id="btn-2d" class="toggle-btn active" onclick="toggleMapMode('2d')">2D</button>
+            <button id="btn-3d" class="toggle-btn" onclick="toggleMapMode('3d')">3D</button>
+        </div>
+
+        <!-- Layers Sidebar -->
+        <div class="map-layers-sidebar">
+            <div class="layers-header">LAYERS</div>
+            <div class="layer-item"><input type="checkbox" checked> <span class="dot-red"></span> CONFLICT ZONES</div>
+            <div class="layer-item"><input type="checkbox" checked> <span class="dot-yellow"></span> INTEL HOTSPOTS</div>
+            <div class="layer-item"><input type="checkbox" checked> <span class="dot-blue"></span> MILITARY BASES</div>
+            <div class="layer-item"><input type="checkbox" checked> <span class="dot-purple"></span> NUCLEAR SITES</div>
+        </div>
+
+        <!-- Map Containers -->
+        <div id="map-canvas" class="map-mode-active"></div>
+        <div id="globe-canvas" class="map-mode-hidden"></div>
+        
+        <div class="map-overlay">
+            <h3>STRATEGIC GLOBAL MONITOR</h3>
+            <p id="defcon-status">DEFCON: 3 <span class="blink">●</span></p>
+        </div>
+    </div>
+</section>
+
+
+    <!-- ARTICLE VIEWER -->
+    <div id="article-viewer" class="viewer">
+    <div class="viewer-inner">
+        <button class="close-btn" onclick="closeArticle()">✕ TERMINATE VIEW</button>
+        <div class="article-meta">
+            <span id="art-category" class="tag"></span>
+            <span id="art-date" class="date"></span>
+        </div>
+        <h1 id="art-title"></h1>
+        <div id="art-body" class="art-body"></div>
+    </div>
+</div>
+
+
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+    <script src="script.js"></script>
+    <script src="//unpkg.com/globe.gl"></script>
+
+</body>
+</html>
