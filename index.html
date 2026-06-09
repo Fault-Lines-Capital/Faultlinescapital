@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Fault Lines Capital — Geopolitics, War & Markets</title>
+    <meta name="description" content="Independent analysis on conflict, energy, and global markets.">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="locked">
+
+    <canvas id="neural-canvas"></canvas>
+
+    <div id="transition-overlay" class="transition-overlay">
+        <div class="trans-globe-wrap">
+            <canvas id="trans-globe" width="400" height="400"></canvas>
+        </div>
+        <div class="trans-direction-hint" id="trans-hint"></div>
+    </div>
+
+    <!-- SPLASH -->
+    <div id="splash-screen" class="splash-screen">
+        <div class="splash-content">
+            <img src="logo-main.png" id="splash-logo" class="splash-logo" alt="Fault Lines Capital">
+            <h1 id="typewriter-title" class="brand-title"></h1>
+            <div class="boot-sequence" id="boot-logs"></div>
+            <div class="progress-container"><div class="progress-bar" id="progress-bar"></div></div>
+            <button id="init-btn" class="init-btn" onclick="startBoot()">Enter the briefing room</button>
+        </div>
+    </div>
+
+    <!-- NAV -->
+    <header class="top-nav">
+        <div class="nav-left" onclick="switchTab('ai', document.querySelector('.nav-item[data-tab=ai]'))">
+            <img src="logo-main.png" class="nav-logo" alt="Logo">
+            <div class="nav-brand">
+                <span class="brand-main">Fault Lines</span>
+                <span class="brand-sub">Capital</span>
+            </div>
+        </div>
+        <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Menu">☰</button>
+        <nav class="nav-links" id="nav-links">
+            <button class="nav-item active" data-tab="ai" onclick="switchTab('ai', this)">Home</button>
+            <button class="nav-item" data-tab="geopolitics" onclick="switchTab('geopolitics', this)">War Wire</button>
+            <button class="nav-item" data-tab="finance" onclick="switchTab('finance', this)">Markets</button>
+            <button class="nav-item" data-tab="map" onclick="switchTab('map', this)">War Room</button>
+        </nav>
+        <div class="nav-right">
+            <span class="dot"></span>
+            <span id="live-clock"></span>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <!-- HOME / BLOG -->
+        <section id="ai-view" class="view-section active">
+            <div class="blog-hero">
+                <p class="eyebrow">Independent geopolitical intelligence</p>
+                <h1 class="blog-hero-title">Where fault lines in power,<br>energy, and capital meet.</h1>
+                <p class="blog-hero-sub">Long-form analysis on war, sanctions, and the economics behind them — written for readers who want depth, not noise.</p>
+            </div>
+            <div id="featured-article" class="featured-card"></div>
+            <div class="section-label">
+                <h2>Latest briefings</h2>
+                <span class="section-count" id="home-post-count"></span>
+            </div>
+            <div class="feed-grid blog-grid" id="home-feed"></div>
+        </section>
+
+        <!-- GEOPOLITICS / WAR WIRE -->
+        <section id="geopolitics-view" class="view-section hidden">
+            <div class="page-intro">
+                <h1>War Wire</h1>
+                <p>Live conflict headlines from Al Jazeera & CNN — filtered to war, military, and security only.</p>
+            </div>
+            <div class="geo-layout">
+                <div class="live-intel-box">
+                    <div class="panel-header">
+                        <span>Live conflict feed</span>
+                        <span id="news-sync-status" class="sync-status">Syncing…</span>
+                    </div>
+                    <div id="geo-news-feed" class="news-feed"></div>
+                </div>
+                <div class="analysis-col">
+                    <div class="section-label"><h2>Analysis & briefings</h2></div>
+                    <div class="feed-grid blog-grid" id="geo-feed"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- FINANCE -->
+        <section id="finance-view" class="view-section hidden">
+            <div class="page-intro">
+                <h1>Markets</h1>
+                <p>Live sensors on gold, oil, crypto, and indices that move when conflict escalates.</p>
+            </div>
+            <div class="live-intel-box">
+                <div class="panel-header">
+                    <span>Market sensors</span>
+                    <span id="market-sync-status" class="sync-status">Syncing…</span>
+                </div>
+                <div id="fin-stock-grid" class="stock-grid"></div>
+            </div>
+            <div class="chart-grid">
+                <div class="chart-box"><div id="tv_chart1"></div></div>
+                <div class="chart-box"><div id="tv_chart2"></div></div>
+            </div>
+            <div class="section-label"><h2>Financial research</h2></div>
+            <div class="feed-grid blog-grid" id="fin-feed"></div>
+        </section>
+
+        <!-- WAR ROOM -->
+        <section id="map-view" class="view-section hidden">
+            <div class="war-room-header">
+                <div>
+                    <h1>War Room</h1>
+                    <p class="war-room-sub">Global monitor — toggle any layer on the map or 3D globe</p>
+                </div>
+                <div class="map-toggle">
+                    <button id="btn-2d" class="toggle-btn active" type="button" onclick="toggleMapMode('2d')">2D Map</button>
+                    <button id="btn-3d" class="toggle-btn" type="button" onclick="toggleMapMode('3d')">3D Globe</button>
+                </div>
+            </div>
+            <div class="war-room-layout">
+                <aside class="layer-panel" id="layer-panel">
+                    <div class="layer-panel-head">
+                        <span>Data layers</span>
+                        <button class="layer-collapse-btn" id="layer-collapse-btn" type="button">✕</button>
+                    </div>
+                    <div class="layer-panel-body" id="map-layers-sidebar">
+                        <!-- Populated by JS -->
+                    </div>
+                    <div class="layer-panel-foot">
+                        <button type="button" class="layer-action-btn" onclick="toggleAllLayers(true)">Show all</button>
+                        <button type="button" class="layer-action-btn" onclick="toggleAllLayers(false)">Hide all</button>
+                    </div>
+                </aside>
+                <button class="layer-open-btn" id="layer-open-btn" type="button">☰ Layers</button>
+                <div class="map-container">
+                    <div id="map-canvas" class="map-mode-active"></div>
+                    <div id="war-room-globe" class="map-mode-hidden"></div>
+                    <div class="map-overlay">
+                        <span class="map-overlay-tag">Global Monitor</span>
+                        <p id="map-mode-label">2D tactical view</p>
+                        <p id="layer-count-label" class="map-mode-label">0 layers active</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- ARTICLE READER -->
+    <div id="article-viewer" class="viewer">
+        <div class="viewer-inner">
+            <button class="close-btn" onclick="closeArticle()">← Back</button>
+            <article class="article-reader" id="article-reader">
+                <div class="article-watermark" id="article-watermark" aria-hidden="true"></div>
+                <div class="article-meta" id="article-meta-bar">
+                    <span id="art-category" class="tag"></span>
+                    <span id="art-date" class="date"></span>
+                </div>
+                <h1 id="art-title"></h1>
+                <div id="art-author-line" class="author-line"></div>
+                <div id="art-body" class="art-body prose"></div>
+            </article>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/globe.gl"></script>
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
