@@ -515,6 +515,10 @@ function renderFeed(id, posts) {
         card.className = 'post-card';
         card.innerHTML = makeCardHTML(post);
         card.onclick = () => openArticle(post);
+        card.ontouchend = (e) => {
+            e.preventDefault();
+            openArticle(post);
+        };
         feed.appendChild(card);
         setTimeout(() => card.classList.add('reveal'), i * 80);
     });
@@ -528,6 +532,7 @@ function openArticle(post) {
 
     document.body.style.overflow = 'hidden';
     viewer.style.display = 'block';
+    viewer.style.visibility = 'visible';
     viewer.classList.add('active');
 
     document.getElementById('art-title').innerText = post.title;
