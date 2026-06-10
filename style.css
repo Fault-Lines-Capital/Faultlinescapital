@@ -570,7 +570,14 @@ body.locked { overflow: hidden; }
     .main-content { padding: 1.5rem 1rem; }
     .blog-hero-title { font-size: 2rem; }
     .feed-grid, .blog-grid { grid-template-columns: 1fr; }
-    .viewer-inner { padding: 4.5rem 1rem 3rem; }
+    .viewer-inner { padding: 4rem 1rem 2rem; }
     #art-title { font-size: 1.75rem; }
     .prose { font-size: 1rem; }
+    .close-btn {
+        top: 0.75rem; left: 0.75rem;
+        padding: 0.6rem 1.2rem;
+        font-size: 0.95rem;
+        background: rgba(8, 12, 18, 0.95);
+        backdrop-filter: blur(8px);
+    }
 }
