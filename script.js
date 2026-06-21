@@ -482,7 +482,7 @@ function makeCardHTML(post, featured = false) {
 
 async function loadHomeFeed() {
     const posts = await loadPosts();
-    const geoPosts = posts.filter(p => p.category === 'geopolitics');
+    const geoPosts = posts.filter(p => p.category === 'geopolitics').sort((a, b) => (b.id || 0) - (a.id || 0));
     const allSorted = [...posts].sort((a, b) => (b.id || 0) - (a.id || 0));
 
     const featured = document.getElementById('featured-article');
