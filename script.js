@@ -529,6 +529,7 @@ function openArticle(post) {
     document.body.style.overflow = 'hidden';
     viewer.style.display = 'block';
     viewer.classList.add('active');
+    viewer.classList.toggle('viewer--pdf', isPdf);
 
     document.getElementById('art-title').innerText = post.title;
     document.getElementById('art-category').innerText = (post.category || '').toUpperCase();
@@ -537,11 +538,11 @@ function openArticle(post) {
         `By <strong>${post.author || 'Editorial'}</strong>${post.role ? ` · ${post.role}` : ''}`;
 
     const body = document.getElementById('art-body');
-    body.className = isPdf ? 'art-body' : 'art-body prose';
+    body.className = isPdf ? 'art-body pdf-body' : 'art-body prose';
 
     if (isPdf) {
         articleReader?.classList.remove('has-watermark');
-        body.innerHTML = `<div class="pdf-wrapper"><div class="pdf-container"><iframe src="${post.file}#toolbar=0&navpanes=0&view=FitH" width="100%" height="100%" style="border:none"></iframe></div></div>`;
+        renderPdfDocument(post.file, body);
     } else if (post.content) {
         articleReader?.classList.add('has-watermark');
         body.innerHTML = post.content.split('\n').map(p =>
@@ -556,10 +557,58 @@ function openArticle(post) {
     }
 }
 
+async function renderPdfDocument(url, container) {
+    container.innerHTML = `
+        <div class="pdf-wrapper">
+            <div class="pdf-toolbar">
+                <a class="pdf-open-native" href="${url}" target="_blank" rel="noopener">↗ Open in browser</a>
+                <span class="pdf-page-count" id="pdf-page-count">Loading…</span>
+            </div>
+            <div class="pdf-pages" id="pdf-pages"><div class="pdf-loading">Rendering document…</div></div>
+        </div>`;
+
+    const pagesEl = document.getElementById('pdf-pages');
+    const countEl = document.getElementById('pdf-page-count');
+
+    if (typeof pdfjsLib === 'undefined') {
+        pagesEl.innerHTML = `<iframe src="${url}" width="100%" style="min-height:80vh;border:none;border-radius:8px;background:#fff"></iframe>`;
+        if (countEl) countEl.textContent = 'Scroll to read';
+        return;
+    }
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    try {
+        const pdf = await pdfjsLib.getDocument(url).promise;
+        pagesEl.innerHTML = '';
+        if (countEl) countEl.textContent = `${pdf.numPages} page${pdf.numPages !== 1 ? 's' : ''} — scroll to read`;
+
+        const scale = window.innerWidth < 640 ? 1.15 : window.innerWidth < 900 ? 1.35 : 1.5;
+
+        for (let n = 1; n <= pdf.numPages; n++) {
+            const page = await pdf.getPage(n);
+            const viewport = page.getViewport({ scale });
+            const canvas = document.createElement('canvas');
+            canvas.className = 'pdf-page-canvas';
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+            pagesEl.appendChild(canvas);
+        }
+    } catch (e) {
+        console.error('PDF render error:', e);
+        pagesEl.innerHTML = `
+            <div class="pdf-loading">Could not render inline. Use the button above to open the full PDF.</div>
+            <iframe src="${url}" width="100%" style="min-height:70vh;border:none;border-radius:8px;background:#fff"></iframe>`;
+        if (countEl) countEl.textContent = 'Tap link above';
+    }
+}
+
 function closeArticle() {
     const viewer = document.getElementById('article-viewer');
     document.getElementById('article-reader')?.classList.remove('has-watermark');
-    viewer.classList.remove('active');
+    viewer.classList.remove('active', 'viewer--pdf');
     viewer.style.display = 'none';
     document.body.style.overflow = '';
     document.getElementById('art-body').innerHTML = '';
@@ -582,31 +631,51 @@ const WAR_KEYWORDS = [
 ];
 
 const NEWS_FEEDS = [
-    { source: 'AL JAZEERA', url: 'https://www.aljazeera.com/xml/rss/all.xml' },
-    { source: 'CNN', url: 'https://rss.cnn.com/rss/cnn_world.rss' },
-    { source: 'WAR DESK', url: 'https://news.google.com/rss/search?q=war+OR+conflict+OR+military+OR+invasion+when:2d&hl=en-US&gl=US&ceid=US:en', fallback: true },
-    { source: 'AL JAZEERA', url: 'https://news.google.com/rss/search?q=site:aljazeera.com+war+OR+conflict+OR+military&hl=en-US&gl=US&ceid=US:en', fallback: true },
-    { source: 'CNN', url: 'https://news.google.com/rss/search?q=site:cnn.com+war+OR+conflict+OR+military&hl=en-US&gl=US&ceid=US:en', fallback: true },
+    { source: 'WAR DESK', url: 'https://news.google.com/rss/search?q=war+OR+conflict+OR+military+OR+strike+when:1d&hl=en-US&gl=US&ceid=US:en' },
+    { source: 'CNN', url: 'https://news.google.com/rss/search?q=site:cnn.com+(war+OR+conflict+OR+military)&hl=en-US&gl=US&ceid=US:en' },
+    { source: 'AL JAZEERA', url: 'https://news.google.com/rss/search?q=site:aljazeera.com+(war+OR+conflict+OR+military)&hl=en-US&gl=US&ceid=US:en' },
 ];
+
+const CACHE_TTL_MS = 90000;
+
+function getCache(key) {
+    try {
+        const raw = sessionStorage.getItem(key);
+        if (!raw) return null;
+        const { ts, data } = JSON.parse(raw);
+        return Date.now() - ts < CACHE_TTL_MS ? data : null;
+    } catch { return null; }
+}
+
+function setCache(key, data) {
+    try { sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
+}
 
 function isWarNews(title, desc = '') {
     const text = (title + ' ' + desc).toLowerCase();
     return WAR_KEYWORDS.some(kw => text.includes(kw));
 }
 
-async function fetchViaProxy(url) {
+async function fetchViaProxy(url, timeoutMs = 6000) {
     const builders = [
         u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
         u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
     ];
-    for (const build of builders) {
+
+    const fetchOne = async (build) => {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
         try {
-            const res = await fetch(build(url));
-            if (!res.ok) continue;
+            const res = await fetch(build(url), { signal: ctrl.signal });
+            if (!res.ok) throw new Error('bad status');
             const text = await res.text();
-            if (text && !text.includes('Access Denied')) return text;
-        } catch (_) {}
-    }
+            if (!text || text.includes('Access Denied')) throw new Error('blocked');
+            return text;
+        } finally { clearTimeout(timer); }
+    };
+
+    const results = await Promise.allSettled(builders.map(fetchOne));
+    for (const r of results) if (r.status === 'fulfilled') return r.value;
     throw new Error('Proxy failed');
 }
 
@@ -621,18 +690,36 @@ function parseRSS(xmlText) {
 }
 
 async function fetchAllNews() {
-    const all = [];
-    const got = new Set();
-    for (const feed of NEWS_FEEDS) {
-        if (got.has(feed.source) && !feed.fallback) continue;
-        try {
-            const items = parseRSS(await fetchViaProxy(feed.url))
+    const results = await Promise.allSettled(
+        NEWS_FEEDS.map(async (feed) => {
+            const items = parseRSS(await fetchViaProxy(feed.url, 5000))
                 .filter(i => isWarNews(i.title, i.desc))
                 .map(i => ({ ...i, source: feed.source }));
-            if (items.length) { all.push(...items); got.add(feed.source); }
-        } catch (e) { if (!feed.fallback) console.warn(`Feed error (${feed.source}):`, e); }
-    }
-    return all.sort((a, b) => b.date - a.date);
+            return items;
+        })
+    );
+
+    const seen = new Set();
+    const all = [];
+    results.forEach(r => {
+        if (r.status !== 'fulfilled') return;
+        r.value.forEach(item => {
+            if (seen.has(item.link)) return;
+            seen.add(item.link);
+            all.push(item);
+        });
+    });
+
+    const sorted = all.sort((a, b) => b.date - a.date);
+    if (sorted.length) setCache('flc_news', sorted);
+    return sorted;
+}
+
+function renderNewsItems(items) {
+    const feed = document.getElementById('geo-news-feed');
+    if (!feed || !items.length) return;
+    feed.querySelector('.news-empty')?.remove();
+    items.slice(0, 20).forEach(item => { if (!seenNewsLinks.has(item.link)) addNewsItem(item); });
 }
 
 function formatNewsTime(date) {
@@ -666,21 +753,27 @@ function addNewsItem(item) {
 async function refreshLiveNews() {
     const status = document.getElementById('news-sync-status');
     const feed = document.getElementById('geo-news-feed');
+
+    const cached = getCache('flc_news');
+    if (cached?.length && feed && !feed.querySelector('.geo-news-item')) {
+        renderNewsItems(cached);
+        if (status) { status.textContent = `${cached.length} headlines (cached)`; status.classList.add('synced'); }
+    }
+
     try {
         const items = await fetchAllNews();
         if (items.length === 0) {
             if (feed && !feed.querySelector('.geo-news-item')) {
-                feed.innerHTML = '<div class="news-empty">No war headlines right now. Feeds refresh every 2 min.</div>';
+                feed.innerHTML = '<div class="news-empty">No war headlines right now. Refreshing every 2 min.</div>';
             }
             if (status) status.textContent = 'No matches';
             return;
         }
-        feed?.querySelector('.news-empty')?.remove();
-        items.slice(0, 20).forEach(item => { if (!seenNewsLinks.has(item.link)) addNewsItem(item); });
+        renderNewsItems(items);
         if (status) { status.textContent = `${items.length} war headlines`; status.classList.add('synced'); }
     } catch (e) {
         console.error('News error:', e);
-        if (status) status.textContent = 'Retrying…';
+        if (status && !feed?.querySelector('.geo-news-item')) status.textContent = 'Retrying…';
     }
 }
 
@@ -688,7 +781,14 @@ function startLiveNewsFeed() {
     if (liveNewsStarted) { refreshLiveNews(); return; }
     liveNewsStarted = true;
     const feed = document.getElementById('geo-news-feed');
-    if (feed) feed.innerHTML = '<div class="news-empty">Fetching war & conflict headlines…</div>';
+    const cached = getCache('flc_news');
+    if (cached?.length) {
+        renderNewsItems(cached);
+        document.getElementById('news-sync-status').textContent = `${cached.length} headlines`;
+        document.getElementById('news-sync-status')?.classList.add('synced');
+    } else if (feed) {
+        feed.innerHTML = '<div class="news-empty">Loading war headlines…</div>';
+    }
     refreshLiveNews();
     newsPollTimer = setInterval(refreshLiveNews, 120000);
 }
@@ -706,11 +806,20 @@ const stockAssets = [
     { id: 'nasdaq', label: 'NASDAQ', symbol: '^NDX' },
 ];
 
-async function fetchYahooPrice(symbol) {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
-    const data = JSON.parse(await fetchViaProxy(url));
-    const meta = data.chart.result[0].meta;
-    return { price: meta.regularMarketPrice, prev: meta.chartPreviousClose || meta.regularMarketPrice };
+const YAHOO_SYMBOLS = { gold: 'GC=F', sp500: '^GSPC', oil: 'BZ=F', nasdaq: '^NDX' };
+
+async function fetchYahooBatch() {
+    const symList = Object.values(YAHOO_SYMBOLS).map(encodeURIComponent).join(',');
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symList}`;
+    const data = JSON.parse(await fetchViaProxy(url, 7000));
+    const map = {};
+    (data.quoteResponse?.result || []).forEach(q => {
+        map[q.symbol] = {
+            price: q.regularMarketPrice,
+            prev: q.regularMarketPreviousClose || q.regularMarketPrice,
+        };
+    });
+    return map;
 }
 
 async function fetchCryptoPrice() {
@@ -724,32 +833,70 @@ async function fetchForexUSDINR() {
         const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=INR');
         const d = await res.json();
         return { price: d.rates.INR, prev: d.rates.INR };
-    } catch (_) { return fetchYahooPrice('USDINR=X'); }
+    } catch (_) {
+        const map = await fetchYahooBatch();
+        const q = map['USDINR=X'] || map['INR=X'];
+        if (q) return q;
+        throw new Error('forex failed');
+    }
+}
+
+function applyMarketQuote(assetId, r, el) {
+    if (!el || !r) return;
+    const prev = parseFloat(el.dataset.prev) || r.prev;
+    const change = r.price - prev;
+    el.dataset.prev = r.price;
+    const priceEl = el.querySelector('.price');
+    const changeEl = el.querySelector('.change');
+    const dec = assetId === 'btc' ? 0 : 2;
+    priceEl.textContent = r.price.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    const pct = prev ? ((change / prev) * 100).toFixed(2) : '0.00';
+    changeEl.textContent = `${change >= 0 ? '+' : ''}${pct}%`;
+    changeEl.className = `change ${change >= 0 ? 'stock-up' : 'stock-down'}`;
+    el.classList.add(change >= 0 ? 'flash-up' : 'flash-down');
+    setTimeout(() => el.classList.remove('flash-up', 'flash-down'), 600);
+}
+
+async function fetchAllMarketData() {
+    const [cryptoR, forexR, yahooR] = await Promise.allSettled([
+        fetchCryptoPrice(),
+        fetchForexUSDINR(),
+        fetchYahooBatch(),
+    ]);
+
+    const data = {};
+    if (cryptoR.status === 'fulfilled') data.btc = cryptoR.value;
+    if (forexR.status === 'fulfilled') data.usdinr = forexR.value;
+    if (yahooR.status === 'fulfilled') {
+        const y = yahooR.value;
+        if (y['GC=F']) data.gold = y['GC=F'];
+        if (y['^GSPC']) data.sp500 = y['^GSPC'];
+        if (y['BZ=F']) data.oil = y['BZ=F'];
+        if (y['^NDX']) data.nasdaq = y['^NDX'];
+    }
+    if (Object.keys(data).length) setCache('flc_markets', data);
+    return data;
+}
+
+function renderMarketData(data) {
+    Object.entries(data).forEach(([id, r]) => {
+        applyMarketQuote(id, r, document.getElementById(`stock-${id}`));
+    });
 }
 
 async function refreshMarketData() {
     const status = document.getElementById('market-sync-status');
-    const updates = await Promise.allSettled(stockAssets.map(async asset => {
-        let r;
-        if (asset.type === 'crypto') r = await fetchCryptoPrice();
-        else if (asset.type === 'forex') r = await fetchForexUSDINR();
-        else r = await fetchYahooPrice(asset.symbol);
-        const el = document.getElementById(`stock-${asset.id}`);
-        if (!el) return;
-        const prev = parseFloat(el.dataset.prev) || r.prev;
-        const change = r.price - prev;
-        el.dataset.prev = r.price;
-        const priceEl = el.querySelector('.price');
-        const changeEl = el.querySelector('.change');
-        const dec = asset.id === 'btc' ? 0 : 2;
-        priceEl.textContent = r.price.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-        const pct = prev ? ((change / prev) * 100).toFixed(2) : '0.00';
-        changeEl.textContent = `${change >= 0 ? '+' : ''}${pct}%`;
-        changeEl.className = `change ${change >= 0 ? 'stock-up' : 'stock-down'}`;
-        el.classList.add(change >= 0 ? 'flash-up' : 'flash-down');
-        setTimeout(() => el.classList.remove('flash-up', 'flash-down'), 600);
-    }));
-    if (status) { status.textContent = 'Live'; status.classList.add('synced'); }
+    const cached = getCache('flc_markets');
+
+    try {
+        const data = await fetchAllMarketData();
+        renderMarketData(data);
+        if (status) { status.textContent = 'Live'; status.classList.add('synced'); }
+    } catch (e) {
+        console.error('Market error:', e);
+        if (cached) renderMarketData(cached);
+        if (status) status.textContent = cached ? 'Cached' : 'Retrying…';
+    }
 }
 
 function startMarketSensors() {
@@ -764,6 +911,12 @@ function startMarketSensors() {
             div.innerHTML = `<span class="stock-label">${a.label}</span><div class="stock-values"><span class="price">—</span><span class="change">—</span></div>`;
             grid.appendChild(div);
         });
+    }
+    const cached = getCache('flc_markets');
+    if (cached) {
+        renderMarketData(cached);
+        document.getElementById('market-sync-status').textContent = 'Updating…';
+        document.getElementById('market-sync-status')?.classList.add('synced');
     }
     refreshMarketData();
     if (!marketPollTimer) marketPollTimer = setInterval(refreshMarketData, 30000);
@@ -932,4 +1085,17 @@ function updateClock() {
     if (clock) clock.textContent = new Intl.DateTimeFormat('en-IN', opts).format(new Date()) + ' IST';
 }
 
-window.onload = () => { setInterval(updateClock, 1000); updateClock(); };
+window.onload = () => {
+    setInterval(updateClock, 1000);
+    updateClock();
+    prefetchLiveData();
+};
+
+function prefetchLiveData() {
+    fetchAllNews().then(items => {
+        if (items.length) setCache('flc_news', items);
+    }).catch(() => {});
+    fetchAllMarketData().then(data => {
+        if (Object.keys(data).length) setCache('flc_markets', data);
+    }).catch(() => {});
+};
