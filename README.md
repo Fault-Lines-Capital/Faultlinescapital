@@ -2,7 +2,8 @@
 
 Geopolitical intelligence blog — war wire, market sensors, and interactive war room.
 
-**Live site:** [https://fault-lines-capital.github.io/Faultlinescapital/](https://fault-lines-capital.github.io/Faultlinescapital/)
+**Live site:** [https://faultlinescapital.com](https://faultlinescapital.com)  
+**GitHub Pages:** [https://fault-lines-capital.github.io/Faultlinescapital/](https://fault-lines-capital.github.io/Faultlinescapital/)
 
 ## Run locally
 
