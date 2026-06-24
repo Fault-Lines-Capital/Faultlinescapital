@@ -631,24 +631,38 @@ const WAR_KEYWORDS = [
 ];
 
 const NEWS_FEEDS = [
-    { source: 'WAR DESK', url: 'https://news.google.com/rss/search?q=war+OR+conflict+OR+military+OR+strike+when:1d&hl=en-US&gl=US&ceid=US:en' },
-    { source: 'CNN', url: 'https://news.google.com/rss/search?q=site:cnn.com+(war+OR+conflict+OR+military)&hl=en-US&gl=US&ceid=US:en' },
-    { source: 'AL JAZEERA', url: 'https://news.google.com/rss/search?q=site:aljazeera.com+(war+OR+conflict+OR+military)&hl=en-US&gl=US&ceid=US:en' },
+    { source: 'AL JAZEERA', url: 'https://news.google.com/rss/search?q=site:aljazeera.com+when:7d&hl=en-US&gl=US&ceid=US:en' },
+    { source: 'CNN', url: 'https://news.google.com/rss/search?q=site:cnn.com+world+when:7d&hl=en-US&gl=US&ceid=US:en' },
+    { source: 'WAR DESK', url: 'https://news.google.com/rss/search?q=war+OR+conflict+OR+military+OR+israel+OR+gaza+when:7d&hl=en-US&gl=US&ceid=US:en' },
 ];
 
-const CACHE_TTL_MS = 90000;
+const CACHE_TTL_MS = 120000;
+const STALE_TTL_MS = 86400000;
 
 function getCache(key) {
     try {
         const raw = sessionStorage.getItem(key);
+        if (!raw) return getStaleCache(key);
+        const { ts, data } = JSON.parse(raw);
+        return Date.now() - ts < CACHE_TTL_MS ? data : getStaleCache(key);
+    } catch { return getStaleCache(key); }
+}
+
+function getStaleCache(key) {
+    try {
+        const raw = localStorage.getItem(key);
         if (!raw) return null;
         const { ts, data } = JSON.parse(raw);
-        return Date.now() - ts < CACHE_TTL_MS ? data : null;
+        return Date.now() - ts < STALE_TTL_MS ? data : null;
     } catch { return null; }
 }
 
 function setCache(key, data) {
-    try { sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
+    try {
+        const payload = JSON.stringify({ ts: Date.now(), data });
+        sessionStorage.setItem(key, payload);
+        localStorage.setItem(key, payload);
+    } catch (_) {}
 }
 
 function isWarNews(title, desc = '') {
@@ -656,9 +670,10 @@ function isWarNews(title, desc = '') {
     return WAR_KEYWORDS.some(kw => text.includes(kw));
 }
 
-async function fetchViaProxy(url, timeoutMs = 6000) {
+async function fetchViaProxy(url, timeoutMs = 8000) {
     const builders = [
         u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+        u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
         u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
     ];
 
@@ -669,7 +684,7 @@ async function fetchViaProxy(url, timeoutMs = 6000) {
             const res = await fetch(build(url), { signal: ctrl.signal });
             if (!res.ok) throw new Error('bad status');
             const text = await res.text();
-            if (!text || text.includes('Access Denied')) throw new Error('blocked');
+            if (!text || text.includes('Access Denied') || text.includes('<TITLE>Access Denied</TITLE>')) throw new Error('blocked');
             return text;
         } finally { clearTimeout(timer); }
     };
@@ -692,8 +707,7 @@ function parseRSS(xmlText) {
 async function fetchAllNews() {
     const results = await Promise.allSettled(
         NEWS_FEEDS.map(async (feed) => {
-            const items = parseRSS(await fetchViaProxy(feed.url, 5000))
-                .filter(i => isWarNews(i.title, i.desc))
+            const items = parseRSS(await fetchViaProxy(feed.url, 10000))
                 .map(i => ({ ...i, source: feed.source }));
             return items;
         })
@@ -710,9 +724,12 @@ async function fetchAllNews() {
         });
     });
 
-    const sorted = all.sort((a, b) => b.date - a.date);
-    if (sorted.length) setCache('flc_news', sorted);
-    return sorted;
+    all.sort((a, b) => b.date - a.date);
+    const warItems = all.filter(i => isWarNews(i.title, i.desc));
+    const items = warItems.length >= 3 ? warItems : all;
+
+    if (items.length) setCache('flc_news', items);
+    return items;
 }
 
 function renderNewsItems(items) {
@@ -723,9 +740,24 @@ function renderNewsItems(items) {
 }
 
 function formatNewsTime(date) {
-    return new Intl.DateTimeFormat('en-IN', {
-        timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false, day: '2-digit', month: 'short'
-    }).format(date);
+    if (!(date instanceof Date) || isNaN(date)) return '—';
+    const opts = {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: false
+    };
+    return new Intl.DateTimeFormat('en-IN', opts).format(date);
+}
+
+function renderNewsFeed(items, statusText) {
+    const feed = document.getElementById('geo-news-feed');
+    const status = document.getElementById('news-sync-status');
+    if (!feed || !items.length) return false;
+    feed.innerHTML = '';
+    seenNewsLinks.clear();
+    items.slice(0, 25).forEach(item => addNewsItem(item));
+    if (status) { status.textContent = statusText; status.classList.add('synced'); }
+    return true;
 }
 
 function addNewsItem(item) {
@@ -737,8 +769,10 @@ function addNewsItem(item) {
     el.className = 'geo-news-item';
     const srcClass = item.source === 'CNN' ? 'source-cnn' : item.source === 'AL JAZEERA' ? 'source-aj' : 'source-war';
     el.innerHTML = `
-        <span class="geo-time">${formatNewsTime(item.date)}</span>
-        <span class="geo-region ${srcClass}">${item.source}</span>
+        <div class="geo-news-meta">
+            <span class="geo-time">${formatNewsTime(item.date)}</span>
+            <span class="geo-region ${srcClass}">${item.source}</span>
+        </div>
         <a class="geo-link" href="${item.link}" target="_blank" rel="noopener">${item.title}</a>
     `;
     feed.insertBefore(el, feed.firstChild);
@@ -753,27 +787,34 @@ function addNewsItem(item) {
 async function refreshLiveNews() {
     const status = document.getElementById('news-sync-status');
     const feed = document.getElementById('geo-news-feed');
-
     const cached = getCache('flc_news');
+
     if (cached?.length && feed && !feed.querySelector('.geo-news-item')) {
-        renderNewsItems(cached);
-        if (status) { status.textContent = `${cached.length} headlines (cached)`; status.classList.add('synced'); }
+        renderNewsFeed(cached, `${cached.length} headlines`);
     }
 
     try {
         const items = await fetchAllNews();
         if (items.length === 0) {
-            if (feed && !feed.querySelector('.geo-news-item')) {
-                feed.innerHTML = '<div class="news-empty">No war headlines right now. Refreshing every 2 min.</div>';
+            if (cached?.length) {
+                renderNewsFeed(cached, `${cached.length} headlines (saved)`);
+                return;
             }
-            if (status) status.textContent = 'No matches';
+            if (feed && !feed.querySelector('.geo-news-item')) {
+                feed.innerHTML = '<div class="news-empty">Feed temporarily unavailable. Retrying in 2 min.</div>';
+            }
+            if (status) status.textContent = 'Retrying…';
             return;
         }
-        renderNewsItems(items);
-        if (status) { status.textContent = `${items.length} war headlines`; status.classList.add('synced'); }
+        renderNewsFeed(items, `${items.length} headlines live`);
     } catch (e) {
         console.error('News error:', e);
-        if (status && !feed?.querySelector('.geo-news-item')) status.textContent = 'Retrying…';
+        if (cached?.length) {
+            renderNewsFeed(cached, `${cached.length} headlines (saved)`);
+        } else if (feed && !feed.querySelector('.geo-news-item')) {
+            feed.innerHTML = '<div class="news-empty">Could not reach news feeds. Check connection and retry.</div>';
+            if (status) status.textContent = 'Offline';
+        }
     }
 }
 
@@ -783,11 +824,9 @@ function startLiveNewsFeed() {
     const feed = document.getElementById('geo-news-feed');
     const cached = getCache('flc_news');
     if (cached?.length) {
-        renderNewsItems(cached);
-        document.getElementById('news-sync-status').textContent = `${cached.length} headlines`;
-        document.getElementById('news-sync-status')?.classList.add('synced');
+        renderNewsFeed(cached, `${cached.length} headlines`);
     } else if (feed) {
-        feed.innerHTML = '<div class="news-empty">Loading war headlines…</div>';
+        feed.innerHTML = '<div class="news-empty">Loading headlines…</div>';
     }
     refreshLiveNews();
     newsPollTimer = setInterval(refreshLiveNews, 120000);
@@ -887,15 +926,36 @@ function renderMarketData(data) {
 async function refreshMarketData() {
     const status = document.getElementById('market-sync-status');
     const cached = getCache('flc_markets');
+    const partial = { ...(cached || {}) };
+
+    if (cached) renderMarketData(cached);
+
+    const fast = await Promise.allSettled([fetchCryptoPrice(), fetchForexUSDINR()]);
+    if (fast[0].status === 'fulfilled') partial.btc = fast[0].value;
+    if (fast[1].status === 'fulfilled') partial.usdinr = fast[1].value;
+    if (partial.btc || partial.usdinr) {
+        renderMarketData(partial);
+        setCache('flc_markets', partial);
+        if (status) { status.textContent = 'Updating…'; status.classList.add('synced'); }
+    }
 
     try {
-        const data = await fetchAllMarketData();
-        renderMarketData(data);
+        const yahoo = await fetchYahooBatch();
+        if (yahoo['GC=F']) partial.gold = yahoo['GC=F'];
+        if (yahoo['^GSPC']) partial.sp500 = yahoo['^GSPC'];
+        if (yahoo['BZ=F']) partial.oil = yahoo['BZ=F'];
+        if (yahoo['^NDX']) partial.nasdaq = yahoo['^NDX'];
+        setCache('flc_markets', partial);
+        renderMarketData(partial);
         if (status) { status.textContent = 'Live'; status.classList.add('synced'); }
     } catch (e) {
         console.error('Market error:', e);
-        if (cached) renderMarketData(cached);
-        if (status) status.textContent = cached ? 'Cached' : 'Retrying…';
+        if (Object.keys(partial).length) {
+            renderMarketData(partial);
+            if (status) status.textContent = 'Partial live';
+        } else if (status) {
+            status.textContent = 'Retrying…';
+        }
     }
 }
 
@@ -908,7 +968,7 @@ function startMarketSensors() {
             const div = document.createElement('div');
             div.className = 'stock-item';
             div.id = `stock-${a.id}`;
-            div.innerHTML = `<span class="stock-label">${a.label}</span><div class="stock-values"><span class="price">—</span><span class="change">—</span></div>`;
+            div.innerHTML = `<span class="stock-label">${a.label}</span><div class="stock-values"><span class="price">…</span><span class="change">—</span></div>`;
             grid.appendChild(div);
         });
     }
@@ -919,7 +979,7 @@ function startMarketSensors() {
         document.getElementById('market-sync-status')?.classList.add('synced');
     }
     refreshMarketData();
-    if (!marketPollTimer) marketPollTimer = setInterval(refreshMarketData, 30000);
+    if (!marketPollTimer) marketPollTimer = setInterval(refreshMarketData, 45000);
 }
 
 function initCharts() {

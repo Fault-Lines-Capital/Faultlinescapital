@@ -263,10 +263,16 @@ body.locked { overflow: hidden; }
     padding: 0.85rem 1rem;
     border-bottom: 1px solid var(--border);
     display: grid;
-    grid-template-columns: auto auto 1fr;
-    gap: 0.6rem 0.75rem;
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
     align-items: start;
     animation: fadeUp 0.35s ease;
+}
+.geo-news-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
 }
 .geo-news-item:last-child { border-bottom: none; }
 .geo-time { font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-dim); white-space: nowrap; }
