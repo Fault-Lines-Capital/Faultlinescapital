@@ -11,6 +11,7 @@ let earthquakeData = [];
 const tabs = ['ai', 'geopolitics', 'finance', 'map'];
 let currentTabIndex = 0;
 let ALL_POSTS_CACHE = [];
+let POSTS_CACHE_VERSION = '';
 const seenNewsLinks = new Set();
 
 // ── Touch / resize ──
@@ -456,12 +457,18 @@ function drawTransitionGlobe(canvas, direction) {
 // BLOG / POSTS
 // ═══════════════════════════════════════════════════════════
 
-async function loadPosts() {
-    if (ALL_POSTS_CACHE.length) return ALL_POSTS_CACHE;
+async function loadPosts(force = false) {
     try {
-        const res = await fetch('posts.json');
-        ALL_POSTS_CACHE = await res.json();
-    } catch (e) { console.error('Posts load error:', e); ALL_POSTS_CACHE = []; }
+        const res = await fetch(`posts.json?v=${Date.now()}`, { cache: 'no-store' });
+        const posts = await res.json();
+        const version = `${posts.length}:${posts.at(-1)?.id || 0}`;
+        if (!force && ALL_POSTS_CACHE.length && version === POSTS_CACHE_VERSION) return ALL_POSTS_CACHE;
+        ALL_POSTS_CACHE = posts;
+        POSTS_CACHE_VERSION = version;
+    } catch (e) {
+        console.error('Posts load error:', e);
+        if (!ALL_POSTS_CACHE.length) ALL_POSTS_CACHE = [];
+    }
     return ALL_POSTS_CACHE;
 }
 
@@ -495,7 +502,8 @@ async function loadHomeFeed() {
     const homeFeed = document.getElementById('home-feed');
     const countEl = document.getElementById('home-post-count');
     if (countEl) countEl.textContent = `${allSorted.length} articles`;
-    if (homeFeed && homeFeed.children.length === 0) {
+    if (homeFeed) {
+        homeFeed.innerHTML = '';
         allSorted.forEach((post, i) => {
             const card = document.createElement('div');
             card.className = 'post-card';
@@ -509,7 +517,8 @@ async function loadHomeFeed() {
 
 function renderFeed(id, posts) {
     const feed = document.getElementById(id);
-    if (!feed || feed.children.length > 0) return;
+    if (!feed) return;
+    feed.innerHTML = '';
     posts.forEach((post, i) => {
         const card = document.createElement('div');
         card.className = 'post-card';
