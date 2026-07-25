@@ -458,15 +458,24 @@ function drawTransitionGlobe(canvas, direction) {
 // ═══════════════════════════════════════════════════════════
 
 async function loadPosts(force = false) {
+    if (!force && ALL_POSTS_CACHE.length && POSTS_CACHE_VERSION) return ALL_POSTS_CACHE;
+
+    if (Array.isArray(window.FLC_POSTS) && window.FLC_POSTS.length) {
+        ALL_POSTS_CACHE = window.FLC_POSTS;
+        POSTS_CACHE_VERSION = `${ALL_POSTS_CACHE.length}:${ALL_POSTS_CACHE.at(-1)?.id || 0}`;
+    }
+
     try {
         const res = await fetch(`posts.json?v=${Date.now()}`, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`posts.json ${res.status}`);
         const posts = await res.json();
         const version = `${posts.length}:${posts.at(-1)?.id || 0}`;
-        if (!force && ALL_POSTS_CACHE.length && version === POSTS_CACHE_VERSION) return ALL_POSTS_CACHE;
-        ALL_POSTS_CACHE = posts;
-        POSTS_CACHE_VERSION = version;
+        if (posts.length >= (ALL_POSTS_CACHE.length || 0)) {
+            ALL_POSTS_CACHE = posts;
+            POSTS_CACHE_VERSION = version;
+        }
     } catch (e) {
-        console.error('Posts load error:', e);
+        console.warn('Posts fetch fallback:', e.message);
         if (!ALL_POSTS_CACHE.length) ALL_POSTS_CACHE = [];
     }
     return ALL_POSTS_CACHE;
