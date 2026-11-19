@@ -294,47 +294,28 @@ function getVisibleRings() {
 // BOOT & NEURAL BG
 // ═══════════════════════════════════════════════════════════
 
-const bootMessages = [
-    "Loading global fault line data…",
-    "Connecting live conflict feeds…",
-    "Syncing market sensors…",
-    "Preparing war room layers…",
-    "Briefing room ready."
-];
-
-function startBoot() {
-    const btn = document.getElementById('init-btn');
-    const logs = document.getElementById('boot-logs');
-    const bar = document.getElementById('progress-bar');
-    const title = document.getElementById('typewriter-title');
-    btn.style.display = 'none';
-    const fullText = "Fault Lines Capital";
-
-    let ci = 0;
-    const ti = setInterval(() => {
-        title.innerText = fullText.substring(0, ++ci);
-        if (ci >= fullText.length) clearInterval(ti);
-    }, 80);
-
-    let mi = 0;
-    const li = setInterval(() => {
-        const p = document.createElement('p');
-        p.innerText = bootMessages[mi];
-        logs.appendChild(p);
-        bar.style.width = (++mi / bootMessages.length * 100) + '%';
-        if (mi >= bootMessages.length) { clearInterval(li); setTimeout(executeEntrance, 800); }
-    }, 500);
-}
-
-function executeEntrance() {
-    const splash = document.getElementById('splash-screen');
-    splash.classList.add('splash-exit');
-    document.body.classList.remove('locked');
+function enterSite() {
+    if (window.__flcEntered) return;
+    window.__flcEntered = true;
+    initNeuralBg();
+    const overlay = document.getElementById('transition-overlay');
+    const globeCanvas = document.getElementById('trans-globe');
+    if (overlay) {
+        overlay.classList.add('is-open');
+        overlay.style.display = 'flex';
+        overlay.style.opacity = '1';
+    }
+    drawTransitionGlobe(globeCanvas, 1);
+    document.getElementById('ai-view')?.classList.remove('hidden');
+    loadHomeFeed();
     setTimeout(() => {
-        splash.style.display = 'none';
-        initNeuralBg();
-        switchTab('ai', document.querySelector('.nav-item.active'));
-    }, 900);
+        if (!overlay) return;
+        overlay.style.opacity = '0';
+        setTimeout(() => {
+            overlay.style.display = 'none';
+            overlay.classList.remove('is-open');
+        }, 480);
+    }, 1300);
 }
 
 const ctx = bgCanvas.getContext('2d');
@@ -375,54 +356,40 @@ function initNeuralBg() { initNeural(); }
 // TABS
 // ═══════════════════════════════════════════════════════════
 
-async function switchTab(type, element, direction) {
+async function switchTab(type, element) {
     document.getElementById('nav-links')?.classList.remove('open');
+    document.querySelectorAll('.view-section').forEach(s => s.classList.add('hidden'));
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    if (element) element.classList.add('active');
+    currentTabIndex = tabs.indexOf(type);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    const overlay = document.getElementById('transition-overlay');
-    const globeCanvas = document.getElementById('trans-globe');
-    const dir = direction !== undefined ? direction : 1;
-
-    overlay.style.display = 'flex';
-    overlay.style.opacity = '1';
-    drawTransitionGlobe(globeCanvas, dir);
-
-    setTimeout(async () => {
-        try {
-            document.querySelectorAll('.view-section').forEach(s => s.classList.add('hidden'));
-            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-            element.classList.add('active');
-            currentTabIndex = tabs.indexOf(type);
-
-            if (type === 'ai') {
-                document.getElementById('ai-view').classList.remove('hidden');
-                loadHomeFeed();
-            } else if (type === 'geopolitics') {
-                document.getElementById('geopolitics-view').classList.remove('hidden');
-                const posts = await loadPosts();
-                renderFeed('geo-feed', posts.filter(p => p.category === 'geopolitics'));
-                startLiveNewsFeed();
-            } else if (type === 'finance') {
-                document.getElementById('finance-view').classList.remove('hidden');
-                initCharts();
-                startMarketSensors();
-                const posts = await loadPosts();
-                renderFeed('fin-feed', posts.filter(p => p.category === 'finance'));
-            } else if (type === 'map') {
-                document.getElementById('map-view').classList.remove('hidden');
-                buildLayerPanel();
-                await fetchEarthquakes();
-                initMap();
-                setTimeout(() => {
-                    if (map) map.invalidateSize();
-                    if (mapMode === '3d') initWarRoomGlobe();
-                }, 300);
-            }
-        } catch (e) { console.error('Tab error:', e); }
-        finally {
-            overlay.style.opacity = '0';
-            setTimeout(() => { overlay.style.display = 'none'; }, 400);
+    try {
+        if (type === 'ai') {
+            document.getElementById('ai-view').classList.remove('hidden');
+            loadHomeFeed();
+        } else if (type === 'geopolitics') {
+            document.getElementById('geopolitics-view').classList.remove('hidden');
+            const posts = await loadPosts();
+            renderFeed('geo-feed', posts.filter(p => p.category === 'geopolitics'));
+            startLiveNewsFeed();
+        } else if (type === 'finance') {
+            document.getElementById('finance-view').classList.remove('hidden');
+            initCharts();
+            startMarketSensors();
+            const posts = await loadPosts();
+            renderFeed('fin-feed', posts.filter(p => p.category === 'finance'));
+        } else if (type === 'map') {
+            document.getElementById('map-view').classList.remove('hidden');
+            buildLayerPanel();
+            await fetchEarthquakes();
+            initMap();
+            setTimeout(() => {
+                if (map) map.invalidateSize();
+                if (mapMode === '3d') initWarRoomGlobe();
+            }, 300);
         }
-    }, 600);
+    } catch (e) { console.error('Tab error:', e); }
 }
 
 function drawTransitionGlobe(canvas, direction) {
@@ -1000,11 +967,148 @@ function startMarketSensors() {
     if (!marketPollTimer) marketPollTimer = setInterval(refreshMarketData, 45000);
 }
 
+const STOCK_DIRECTORY = [
+    { symbol: 'NASDAQ:NVDA', name: 'NVIDIA', ticker: 'NVDA' },
+    { symbol: 'NASDAQ:AAPL', name: 'Apple', ticker: 'AAPL' },
+    { symbol: 'NASDAQ:MSFT', name: 'Microsoft', ticker: 'MSFT' },
+    { symbol: 'NASDAQ:TSLA', name: 'Tesla', ticker: 'TSLA' },
+    { symbol: 'NASDAQ:AMZN', name: 'Amazon', ticker: 'AMZN' },
+    { symbol: 'NASDAQ:GOOGL', name: 'Alphabet', ticker: 'GOOGL' },
+    { symbol: 'NASDAQ:META', name: 'Meta', ticker: 'META' },
+    { symbol: 'NASDAQ:AMD', name: 'AMD', ticker: 'AMD' },
+    { symbol: 'NASDAQ:INTC', name: 'Intel', ticker: 'INTC' },
+    { symbol: 'NASDAQ:NFLX', name: 'Netflix', ticker: 'NFLX' },
+    { symbol: 'NASDAQ:AVGO', name: 'Broadcom', ticker: 'AVGO' },
+    { symbol: 'NYSE:JPM', name: 'JPMorgan', ticker: 'JPM' },
+    { symbol: 'NYSE:XOM', name: 'Exxon Mobil', ticker: 'XOM' },
+    { symbol: 'NYSE:BA', name: 'Boeing', ticker: 'BA' },
+    { symbol: 'NYSE:BABA', name: 'Alibaba', ticker: 'BABA' },
+    { symbol: 'NYSE:TSM', name: 'TSMC', ticker: 'TSM' },
+    { symbol: 'AMEX:SPY', name: 'S&P 500 ETF', ticker: 'SPY' },
+    { symbol: 'NASDAQ:QQQ', name: 'Nasdaq 100 ETF', ticker: 'QQQ' },
+    { symbol: 'TVC:GOLD', name: 'Gold', ticker: 'GOLD' },
+    { symbol: 'TVC:SILVER', name: 'Silver', ticker: 'SILVER' },
+    { symbol: 'TVC:USOIL', name: 'WTI crude', ticker: 'OIL' },
+    { symbol: 'TVC:UKOIL', name: 'Brent crude', ticker: 'BRENT' },
+    { symbol: 'TVC:DXY', name: 'US dollar index', ticker: 'DXY' },
+    { symbol: 'FX:USDINR', name: 'Dollar / rupee', ticker: 'USDINR' },
+    { symbol: 'BINANCE:BTCUSDT', name: 'Bitcoin', ticker: 'BTC' },
+    { symbol: 'BINANCE:ETHUSDT', name: 'Ethereum', ticker: 'ETH' },
+    { symbol: 'NSE:RELIANCE', name: 'Reliance', ticker: 'RELIANCE' },
+    { symbol: 'NSE:TCS', name: 'TCS', ticker: 'TCS' },
+    { symbol: 'NSE:INFY', name: 'Infosys', ticker: 'INFY' },
+    { symbol: 'NSE:HDFCBANK', name: 'HDFC Bank', ticker: 'HDFCBANK' },
+    { symbol: 'NSE:ICICIBANK', name: 'ICICI Bank', ticker: 'ICICIBANK' },
+    { symbol: 'NSE:SBIN', name: 'State Bank of India', ticker: 'SBIN' },
+    { symbol: 'NSE:NIFTY', name: 'Nifty 50', ticker: 'NIFTY' },
+    { symbol: 'BSE:SENSEX', name: 'Sensex', ticker: 'SENSEX' }
+];
+
+let lookupSymbol = 'NASDAQ:NVDA';
+let lookupStyle = '1';
+let lookupName = 'NVIDIA';
+
+function mountLookupChart() {
+    const host = document.getElementById('tv_lookup');
+    if (!host || typeof TradingView === 'undefined') return;
+    host.innerHTML = '<div id="tv_lookup_inner" class="tv-fill"></div>';
+    new TradingView.widget({
+        width: '100%',
+        height: '100%',
+        symbol: lookupSymbol,
+        interval: 'D',
+        timezone: 'Asia/Kolkata',
+        theme: 'dark',
+        style: lookupStyle,
+        locale: 'en',
+        allow_symbol_change: true,
+        hide_side_toolbar: false,
+        container_id: 'tv_lookup_inner'
+    });
+    const label = document.getElementById('stock-lookup-label');
+    if (label) label.textContent = `${lookupSymbol} · ${lookupName}`;
+}
+
+function stockMatches(query) {
+    const q = query.trim().toLowerCase();
+    if (!q) return STOCK_DIRECTORY.slice(0, 8);
+    const hits = STOCK_DIRECTORY.filter(s =>
+        s.name.toLowerCase().includes(q) ||
+        s.ticker.toLowerCase().includes(q) ||
+        s.symbol.toLowerCase().includes(q)
+    );
+    if (hits.length) return hits.slice(0, 8);
+    const raw = query.trim().toUpperCase().replace(/\s+/g, '');
+    if (raw.includes(':')) return [{ symbol: raw, name: raw, ticker: raw.split(':').pop() }];
+    return ['NASDAQ', 'NYSE', 'NSE'].map(ex => ({
+        symbol: `${ex}:${raw}`,
+        name: `Look up ${raw}`,
+        ticker: ex
+    }));
+}
+
+function renderStockResults(query) {
+    const list = document.getElementById('stock-results');
+    if (!list) return;
+    const hits = stockMatches(query);
+    list.innerHTML = hits.map((s, i) =>
+        `<li><button type="button" data-i="${i}"><span>${s.name}</span><small>${s.symbol}</small></button></li>`
+    ).join('');
+    list.hidden = false;
+    list.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const pick = hits[Number(btn.dataset.i)];
+            chooseStock(pick);
+        });
+    });
+}
+
+function chooseStock(pick) {
+    lookupSymbol = pick.symbol;
+    lookupName = pick.name.startsWith('Look up') ? pick.ticker : pick.name;
+    const input = document.getElementById('stock-search');
+    const list = document.getElementById('stock-results');
+    if (input) input.value = pick.name.startsWith('Look up') ? pick.symbol : `${pick.name}`;
+    if (list) list.hidden = true;
+    mountLookupChart();
+}
+
+function initStockLookup() {
+    const input = document.getElementById('stock-search');
+    const list = document.getElementById('stock-results');
+    if (!input || input.dataset.ready) return;
+    input.dataset.ready = '1';
+    input.addEventListener('focus', () => renderStockResults(input.value));
+    input.addEventListener('input', () => renderStockResults(input.value));
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const first = stockMatches(input.value)[0];
+            if (first) chooseStock(first);
+        }
+        if (e.key === 'Escape' && list) list.hidden = true;
+    });
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.stock-search') && list) list.hidden = true;
+    });
+    document.querySelectorAll('.style-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.style-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            lookupStyle = btn.dataset.style || '1';
+            mountLookupChart();
+        });
+    });
+}
+
 function initCharts() {
-    if (chartsInitialized || typeof TradingView === 'undefined') return;
+    initStockLookup();
+    if (typeof TradingView === 'undefined') return;
+    if (!document.getElementById('tv_lookup_inner')) mountLookupChart();
+    if (chartsInitialized) return;
     chartsInitialized = true;
-    new TradingView.widget({ width: '100%', height: '100%', symbol: 'TVC:GOLD', interval: 'D', timezone: 'Asia/Kolkata', theme: 'dark', container_id: 'tv_chart1' });
-    new TradingView.widget({ width: '100%', height: '100%', symbol: 'FX:USDINR', interval: 'D', timezone: 'Asia/Kolkata', theme: 'dark', container_id: 'tv_chart2' });
+    new TradingView.widget({ width: '100%', height: '100%', symbol: 'TVC:GOLD', interval: 'D', timezone: 'Asia/Kolkata', theme: 'dark', style: '1', container_id: 'tv_chart1' });
+    new TradingView.widget({ width: '100%', height: '100%', symbol: 'FX:USDINR', interval: 'D', timezone: 'Asia/Kolkata', theme: 'dark', style: '1', container_id: 'tv_chart2' });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1168,6 +1272,8 @@ window.onload = () => {
     updateClock();
     prefetchLiveData();
 };
+
+enterSite();
 
 function prefetchLiveData() {
     fetchAllNews().then(items => {

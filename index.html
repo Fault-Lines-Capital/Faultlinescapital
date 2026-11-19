@@ -9,25 +9,14 @@
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body class="locked">
+<body>
 
     <canvas id="neural-canvas"></canvas>
 
-    <div id="transition-overlay" class="transition-overlay">
+    <div id="transition-overlay" class="transition-overlay is-open">
         <div class="trans-globe-wrap">
             <canvas id="trans-globe" width="400" height="400"></canvas>
-        </div>
-        <div class="trans-direction-hint" id="trans-hint"></div>
-    </div>
-
-    <!-- SPLASH -->
-    <div id="splash-screen" class="splash-screen">
-        <div class="splash-content">
-            <img src="logo-main.png" id="splash-logo" class="splash-logo" alt="Fault Lines Capital">
-            <h1 id="typewriter-title" class="brand-title"></h1>
-            <div class="boot-sequence" id="boot-logs"></div>
-            <div class="progress-container"><div class="progress-bar" id="progress-bar"></div></div>
-            <button id="init-btn" class="init-btn" onclick="startBoot()">Enter the briefing room</button>
+            <p class="trans-caption">Fault Lines Capital</p>
         </div>
     </div>
 
@@ -40,12 +29,11 @@
                 <span class="brand-sub">Capital</span>
             </div>
         </div>
-        <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Menu">☰</button>
-        <nav class="nav-links" id="nav-links">
+        <nav class="nav-links" id="nav-links" aria-label="Site sections">
             <button class="nav-item active" data-tab="ai" onclick="switchTab('ai', this)">Home</button>
             <button class="nav-item" data-tab="geopolitics" onclick="switchTab('geopolitics', this)">War Wire</button>
             <button class="nav-item" data-tab="finance" onclick="switchTab('finance', this)">Markets</button>
-            <button class="nav-item" data-tab="map" onclick="switchTab('map', this)">War Room</button>
+            <button class="nav-item nav-item-war" data-tab="map" onclick="switchTab('map', this)">War Room</button>
         </nav>
         <div class="nav-right">
             <span class="dot"></span>
@@ -95,6 +83,24 @@
             <div class="page-intro">
                 <h1>Markets</h1>
                 <p>Live sensors on gold, oil, crypto, and indices that move when conflict escalates.</p>
+            </div>
+            <div class="stock-lookup">
+                <div class="stock-lookup-head">
+                    <div>
+                        <h2>Stock chart</h2>
+                        <p>Type any company or ticker. Switch between candlesticks and bars.</p>
+                    </div>
+                    <div class="chart-style-toggle" role="group" aria-label="Chart style">
+                        <button type="button" class="style-btn active" data-style="1">Candlestick</button>
+                        <button type="button" class="style-btn" data-style="0">Bars</button>
+                    </div>
+                </div>
+                <div class="stock-search">
+                    <input id="stock-search" type="search" placeholder="Search Apple, NVDA, Reliance, gold…" autocomplete="off" enterkeyhint="search">
+                    <ul id="stock-results" class="stock-results" hidden></ul>
+                </div>
+                <p class="stock-lookup-symbol" id="stock-lookup-label">NASDAQ:NVDA · NVIDIA</p>
+                <div class="chart-box chart-box-lg" id="tv_lookup"></div>
             </div>
             <div class="live-intel-box">
                 <div class="panel-header">
@@ -172,7 +178,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/globe.gl"></script>
     <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-    <script src="posts-data.js?v=16"></script>
-    <script src="script.js?v=16"></script>
+    <script src="posts-data.js?v=17"></script>
+    <script src="script.js?v=17"></script>
 </body>
 </html>
