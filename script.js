@@ -1269,10 +1269,13 @@ function toggleCountryNames() {
         btn.setAttribute('aria-pressed', showCountryNames ? 'true' : 'false');
         btn.textContent = showCountryNames ? 'Country names: On' : 'Country names: Off';
     }
+    if (!showCountryNames) clearCountryHighlight();
     applyCountryLabels();
 }
 
 let hoveredCountry = null;
+let countryHighlightTimer = null;
+let countryLabelHandlersBound = false;
 
 const AMBIENT_ARCS = [
     { startLat: 38.9, startLng: -77.0, endLat: 51.5, endLng: -0.1, color: '#3d7eff' },
@@ -1307,6 +1310,44 @@ const AMBIENT_NODES = [
     { lat: 37.6, lng: 126.9, size: 0.35, color: '#ff4d4d', name: 'Seoul' },
 ];
 
+function clearCountryHighlight() {
+    if (countryHighlightTimer) {
+        clearTimeout(countryHighlightTimer);
+        countryHighlightTimer = null;
+    }
+    hoveredCountry = null;
+    refreshCountryLabelStyles();
+    if (warRoomGlobe) warRoomGlobe.controls().autoRotate = true;
+}
+
+function highlightCountryOnce(label) {
+    if (!label || !label.name) return;
+    if (hoveredCountry && hoveredCountry.name === label.name) return;
+
+    if (countryHighlightTimer) clearTimeout(countryHighlightTimer);
+    hoveredCountry = { name: label.name };
+    refreshCountryLabelStyles();
+    if (warRoomGlobe) warRoomGlobe.controls().autoRotate = false;
+
+    countryHighlightTimer = setTimeout(() => {
+        hoveredCountry = null;
+        countryHighlightTimer = null;
+        refreshCountryLabelStyles();
+        if (warRoomGlobe) warRoomGlobe.controls().autoRotate = true;
+    }, 3500);
+}
+
+function refreshCountryLabelStyles() {
+    if (!warRoomGlobe) return;
+    warRoomGlobe
+        .labelSize(d => (hoveredCountry && hoveredCountry.name === d.name) ? 1.35 : 0.85)
+        .labelColor(d => (hoveredCountry && hoveredCountry.name === d.name)
+            ? 'rgba(255, 90, 90, 1)'
+            : 'rgba(180, 255, 235, 0.98)')
+        .labelAltitude(d => (hoveredCountry && hoveredCountry.name === d.name) ? 0.045 : 0.02)
+        .labelDotRadius(d => (hoveredCountry && hoveredCountry.name === d.name) ? 0.5 : 0.22);
+}
+
 function applyCountryLabels() {
     if (!warRoomGlobe) return;
     warRoomGlobe
@@ -1314,22 +1355,21 @@ function applyCountryLabels() {
         .labelLat('lat')
         .labelLng('lng')
         .labelText('name')
-        .labelSize(d => (hoveredCountry && hoveredCountry.name === d.name) ? 1.45 : 0.85)
-        .labelColor(d => (hoveredCountry && hoveredCountry.name === d.name)
-            ? 'rgba(255, 90, 90, 1)'
-            : 'rgba(180, 255, 235, 0.98)')
-        .labelAltitude(d => (hoveredCountry && hoveredCountry.name === d.name) ? 0.05 : 0.02)
-        .labelDotRadius(d => (hoveredCountry && hoveredCountry.name === d.name) ? 0.55 : 0.22)
         .labelDotOrientation(() => 'bottom')
         .labelResolution(3)
-        .labelIncludeDot(true)
-        .onLabelHover(label => {
-            hoveredCountry = label || null;
-            applyCountryLabels();
-            if (warRoomGlobe) {
-                warRoomGlobe.controls().autoRotate = !label;
-            }
+        .labelIncludeDot(true);
+
+    refreshCountryLabelStyles();
+
+    if (!countryLabelHandlersBound) {
+        countryLabelHandlersBound = true;
+        warRoomGlobe.onLabelHover(label => {
+            if (label) highlightCountryOnce(label);
         });
+        warRoomGlobe.onLabelClick(label => {
+            if (label) highlightCountryOnce(label);
+        });
+    }
 }
 
 const FIGHTER_TYPES = /^(F1[4568]|F22|F35|FA18|EUFI|RFAL|SB39|SU2|SU3|MG29|MG31|J10|J20|J16|A10|TYP|GRIP|F2$)/i;
