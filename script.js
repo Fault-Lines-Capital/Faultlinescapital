@@ -3,7 +3,9 @@
    ═══════════════════════════════════════════════════════════ */
 
 let map, warRoomGlobe, mapLayerGroups = {};
-let mapMode = '2d';
+let mapMode = '3d';
+let showCountryNames = true;
+let trackerTimer = null;
 let newsPollTimer, marketPollTimer;
 let liveNewsStarted = false, marketSensorsStarted = false, chartsInitialized = false;
 let earthquakeData = [];
@@ -48,6 +50,15 @@ document.getElementById('layer-collapse-btn')?.addEventListener('click', () => {
 
 const LAYER_GROUPS = [
     {
+        title: 'Live trackers',
+        layers: [
+            { id: 'navy', label: 'Navy tracker', color: '#3d7eff', default: true },
+            { id: 'jets', label: 'Fighter jets', color: '#ff4d4d', default: true },
+            { id: 'shipradar', label: 'Ship radar', color: '#64ffda', default: true },
+            { id: 'flightradar', label: 'Flight radar', color: '#e8c49a', default: true },
+        ]
+    },
+    {
         title: 'Geopolitical',
         layers: [
             { id: 'conflict', label: 'Conflict zones', color: '#ff2222', default: true },
@@ -62,8 +73,6 @@ const LAYER_GROUPS = [
         layers: [
             { id: 'military', label: 'Military bases', color: '#00d4ff', default: true },
             { id: 'nuclear', label: 'Nuclear sites', color: '#bc13fe', default: true },
-            { id: 'ships', label: 'Naval traffic', color: '#ff8800', default: true },
-            { id: 'air', label: 'Air traffic hubs', color: '#00ffff', default: true },
             { id: 'spaceports', label: 'Spaceports', color: '#88aaff', default: false },
         ]
     },
@@ -190,10 +199,59 @@ const WAR_ROOM_DATA = {
         { lat: 56.0, lng: 20.0, name: 'Baltic jamming', maxR: 4, color: 'rgba(255,68,68,0.35)' },
         { lat: 26.0, lng: 50.0, name: 'Persian Gulf jamming', maxR: 5, color: 'rgba(255,68,68,0.35)' },
     ],
+    navy: [
+        { lat: 36.9, lng: -76.3, name: 'US Navy · Norfolk', size: 0.7, color: '#3d7eff' },
+        { lat: 32.7, lng: -117.2, name: 'US Navy · San Diego', size: 0.7, color: '#3d7eff' },
+        { lat: 21.3, lng: -157.9, name: 'US Navy · Pearl Harbor', size: 0.7, color: '#3d7eff' },
+        { lat: 35.3, lng: 139.7, name: 'US 7th Fleet · Yokosuka', size: 0.7, color: '#3d7eff' },
+        { lat: 26.2, lng: 50.6, name: 'US 5th Fleet · Bahrain', size: 0.7, color: '#3d7eff' },
+        { lat: 40.8, lng: 14.3, name: 'US 6th Fleet · Naples', size: 0.7, color: '#3d7eff' },
+        { lat: 69.0, lng: 33.4, name: 'Russian Northern Fleet · Murmansk', size: 0.7, color: '#3d7eff' },
+        { lat: 44.6, lng: 33.5, name: 'Russian Black Sea Fleet', size: 0.7, color: '#3d7eff' },
+        { lat: 43.1, lng: 131.9, name: 'Russian Pacific Fleet · Vladivostok', size: 0.7, color: '#3d7eff' },
+        { lat: 18.2, lng: 109.5, name: 'Chinese Navy · Yulin', size: 0.7, color: '#3d7eff' },
+        { lat: 36.1, lng: 120.4, name: 'Chinese Navy · Qingdao', size: 0.7, color: '#3d7eff' },
+        { lat: 18.9, lng: 72.8, name: 'Indian Navy · Mumbai', size: 0.7, color: '#3d7eff' },
+        { lat: 13.1, lng: 80.3, name: 'Indian Navy · Chennai', size: 0.6, color: '#3d7eff' },
+        { lat: 50.8, lng: -1.1, name: 'Royal Navy · Portsmouth', size: 0.6, color: '#3d7eff' },
+        { lat: 32.8, lng: 35.0, name: 'Israeli Navy · Haifa', size: 0.6, color: '#3d7eff' },
+        { lat: 27.1, lng: 56.3, name: 'Iranian Navy · Bandar Abbas', size: 0.6, color: '#3d7eff' },
+    ],
+    jets: [],
+    shipradar: [],
+    flightradar: [],
 };
 
-const POINT_LAYERS = ['conflict','intel','unrest','sanctions','military','nuclear','air','spaceports','chokepoints','ports','cyber','earthquakes'];
-const ARC_LAYERS = ['ships','cables','pipelines'];
+const COUNTRY_NAMES = [
+    { lat: 39.8, lng: -98.6, name: 'United States' }, { lat: 56.1, lng: -106.3, name: 'Canada' },
+    { lat: 23.6, lng: -102.5, name: 'Mexico' }, { lat: -14.2, lng: -51.9, name: 'Brazil' },
+    { lat: -38.4, lng: -63.6, name: 'Argentina' }, { lat: 54.5, lng: -2.5, name: 'United Kingdom' },
+    { lat: 46.2, lng: 2.2, name: 'France' }, { lat: 51.2, lng: 10.4, name: 'Germany' },
+    { lat: 41.9, lng: 12.6, name: 'Italy' }, { lat: 40.5, lng: -3.7, name: 'Spain' },
+    { lat: 52.1, lng: 5.3, name: 'Netherlands' }, { lat: 50.5, lng: 4.5, name: 'Belgium' },
+    { lat: 59.3, lng: 18.1, name: 'Sweden' }, { lat: 60.5, lng: 8.5, name: 'Norway' },
+    { lat: 64.0, lng: 26.0, name: 'Finland' }, { lat: 52.1, lng: 19.4, name: 'Poland' },
+    { lat: 48.7, lng: 31.2, name: 'Ukraine' }, { lat: 61.5, lng: 105.3, name: 'Russia' },
+    { lat: 39.0, lng: 35.0, name: 'Turkey' }, { lat: 32.4, lng: 35.1, name: 'Israel' },
+    { lat: 24.0, lng: 45.0, name: 'Saudi Arabia' }, { lat: 32.4, lng: 53.7, name: 'Iran' },
+    { lat: 33.2, lng: 43.7, name: 'Iraq' }, { lat: 33.9, lng: 35.9, name: 'Lebanon' },
+    { lat: 25.3, lng: 51.2, name: 'Qatar' }, { lat: 24.0, lng: 54.0, name: 'UAE' },
+    { lat: 26.8, lng: 30.8, name: 'Egypt' }, { lat: 28.0, lng: 1.7, name: 'Algeria' },
+    { lat: 7.4, lng: 3.9, name: 'Nigeria' }, { lat: 9.1, lng: 40.5, name: 'Ethiopia' },
+    { lat: -1.3, lng: 36.8, name: 'Kenya' }, { lat: -30.6, lng: 22.9, name: 'South Africa' },
+    { lat: 20.6, lng: 78.9, name: 'India' }, { lat: 30.4, lng: 69.3, name: 'Pakistan' },
+    { lat: 23.7, lng: 90.4, name: 'Bangladesh' }, { lat: 7.9, lng: 80.8, name: 'Sri Lanka' },
+    { lat: 28.4, lng: 84.1, name: 'Nepal' }, { lat: 35.9, lng: 104.2, name: 'China' },
+    { lat: 36.2, lng: 138.3, name: 'Japan' }, { lat: 36.5, lng: 127.9, name: 'South Korea' },
+    { lat: 40.3, lng: 127.5, name: 'North Korea' }, { lat: 15.9, lng: 100.9, name: 'Thailand' },
+    { lat: 16.0, lng: 108.0, name: 'Vietnam' }, { lat: 4.2, lng: 101.9, name: 'Malaysia' },
+    { lat: 1.4, lng: 103.8, name: 'Singapore' }, { lat: -2.5, lng: 118.0, name: 'Indonesia' },
+    { lat: 12.9, lng: 121.8, name: 'Philippines' }, { lat: 23.7, lng: 121.0, name: 'Taiwan' },
+    { lat: -25.3, lng: 133.8, name: 'Australia' }, { lat: -41.0, lng: 174.0, name: 'New Zealand' },
+];
+
+const POINT_LAYERS = ['conflict','intel','unrest','sanctions','military','nuclear','spaceports','chokepoints','ports','cyber','earthquakes','navy','jets','shipradar','flightradar'];
+const ARC_LAYERS = ['cables','pipelines'];
 const RING_LAYERS = ['conflict','jamming','earthquakes'];
 
 function buildLayerPanel() {
@@ -383,11 +441,12 @@ async function switchTab(type, element) {
             document.getElementById('map-view').classList.remove('hidden');
             buildLayerPanel();
             await fetchEarthquakes();
-            initMap();
+            initWarRoomGlobe();
+            startLiveTrackers();
             setTimeout(() => {
-                if (map) map.invalidateSize();
-                if (mapMode === '3d') initWarRoomGlobe();
-            }, 300);
+                const el = document.getElementById('war-room-globe');
+                if (warRoomGlobe && el) warRoomGlobe.width(el.clientWidth).height(el.clientHeight);
+            }, 250);
         }
     } catch (e) { console.error('Tab error:', e); }
 }
@@ -1105,10 +1164,6 @@ function initCharts() {
     initStockLookup();
     if (typeof TradingView === 'undefined') return;
     if (!document.getElementById('tv_lookup_inner')) mountLookupChart();
-    if (chartsInitialized) return;
-    chartsInitialized = true;
-    new TradingView.widget({ width: '100%', height: '100%', symbol: 'TVC:GOLD', interval: 'D', timezone: 'Asia/Kolkata', theme: 'dark', style: '1', container_id: 'tv_chart1' });
-    new TradingView.widget({ width: '100%', height: '100%', symbol: 'FX:USDINR', interval: 'D', timezone: 'Asia/Kolkata', theme: 'dark', style: '1', container_id: 'tv_chart2' });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1196,31 +1251,92 @@ function updateMapLayers() {
     updateLayerCount();
 }
 
-function toggleMapMode(mode) {
-    mapMode = mode;
-    const mapEl = document.getElementById('map-canvas');
-    const globeEl = document.getElementById('war-room-globe');
-    const btn2d = document.getElementById('btn-2d');
-    const btn3d = document.getElementById('btn-3d');
-    const label = document.getElementById('map-mode-label');
-
-    if (mode === '2d') {
-        mapEl.classList.remove('map-mode-hidden');
-        mapEl.classList.add('map-mode-active');
-        globeEl.classList.remove('map-mode-active');
-        globeEl.classList.add('map-mode-hidden');
-        btn2d.classList.add('active'); btn3d.classList.remove('active');
-        if (label) label.textContent = '2D tactical view';
-        setTimeout(() => map?.invalidateSize(), 200);
-    } else {
-        mapEl.classList.remove('map-mode-active');
-        mapEl.classList.add('map-mode-hidden');
-        globeEl.classList.remove('map-mode-hidden');
-        globeEl.classList.add('map-mode-active');
-        btn2d.classList.remove('active'); btn3d.classList.add('active');
-        if (label) label.textContent = '3D strategic globe';
-        initWarRoomGlobe();
+function toggleCountryNames() {
+    showCountryNames = !showCountryNames;
+    const btn = document.getElementById('country-names-btn');
+    if (btn) {
+        btn.classList.toggle('active', showCountryNames);
+        btn.setAttribute('aria-pressed', showCountryNames ? 'true' : 'false');
+        btn.textContent = showCountryNames ? 'Country names: On' : 'Country names: Off';
     }
+    applyCountryLabels();
+}
+
+function applyCountryLabels() {
+    if (!warRoomGlobe) return;
+    warRoomGlobe
+        .labelsData(showCountryNames ? COUNTRY_NAMES : [])
+        .labelLat('lat')
+        .labelLng('lng')
+        .labelText('name')
+        .labelSize(0.45)
+        .labelColor(() => 'rgba(232, 237, 244, 0.92)')
+        .labelAltitude(0.012)
+        .labelDotRadius(0);
+}
+
+const FIGHTER_TYPES = /^(F1[4568]|F22|F35|FA18|EUFI|RFAL|SB39|SU2|SU3|MG29|MG31|J10|J20|J16|A10|TYP|GRIP|F2$)/i;
+const FLIGHT_CENTERS = [[51, 10], [48, 37], [32, 35], [26, 56], [28, 77], [35, 105], [36, 138], [1, 104], [40, -74], [34, -118], [25, 55], [55, 37]];
+
+function isFighter(ac) {
+    const t = String(ac.t || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return FIGHTER_TYPES.test(t);
+}
+
+async function fetchJsonFeed(url) {
+    try {
+        const res = await fetch(url, { headers: { 'Digitraffic-User': 'FaultLinesCapital/1.0', Accept: 'application/json' } });
+        if (res.ok) return await res.json();
+    } catch (_) {}
+    const text = await fetchViaProxy(url, 12000);
+    return JSON.parse(text);
+}
+
+async function refreshLiveTrackers() {
+    const jobs = [
+        fetchJsonFeed('https://api.adsb.lol/v2/mil').then(data => {
+            const ac = (data.ac || []).filter(a => a.lat != null && a.lon != null && isFighter(a));
+            WAR_ROOM_DATA.jets = ac.slice(0, 200).map(a => ({
+                lat: a.lat, lng: a.lon,
+                name: `${(a.flight || a.t || 'Fighter').trim()} · ${a.t || 'jet'}`,
+                size: 0.55, color: '#ff4d4d', alt: Number(a.alt_baro) || 0
+            }));
+        }).catch(e => console.warn('Fighter feed:', e.message)),
+        Promise.all(FLIGHT_CENTERS.map(([lat, lon]) =>
+            fetchJsonFeed(`https://api.adsb.lol/v2/point/${lat}/${lon}/180`).catch(() => null)
+        )).then(parts => {
+            const seen = new Set();
+            const flights = [];
+            parts.forEach(data => {
+                (data?.ac || []).forEach(a => {
+                    if (a.lat == null || a.lon == null || seen.has(a.hex) || (a.dbFlags & 1)) return;
+                    seen.add(a.hex);
+                    flights.push({
+                        lat: a.lat, lng: a.lon,
+                        name: `${(a.flight || 'Flight').trim()} · ${a.t || 'aircraft'}`,
+                        size: 0.28, color: '#e8c49a', alt: Number(a.alt_baro) || 0
+                    });
+                });
+            });
+            WAR_ROOM_DATA.flightradar = flights.slice(0, 400);
+        }).catch(e => console.warn('Flight radar:', e.message)),
+        fetchJsonFeed('https://meri.digitraffic.fi/api/ais/v1/locations').then(data => {
+            const features = data.features || [];
+            WAR_ROOM_DATA.shipradar = features.filter((_, i) => i % 3 === 0).slice(0, 280).map(f => ({
+                lat: f.geometry.coordinates[1],
+                lng: f.geometry.coordinates[0],
+                name: `Ship ${f.properties?.mmsi || ''} · ${f.properties?.sog || 0} kn`,
+                size: 0.32, color: '#64ffda'
+            }));
+        }).catch(e => console.warn('Ship radar:', e.message)),
+    ];
+    await Promise.allSettled(jobs);
+    updateGlobeLayers();
+}
+
+function startLiveTrackers() {
+    refreshLiveTrackers();
+    if (!trackerTimer) trackerTimer = setInterval(refreshLiveTrackers, 60000);
 }
 
 function initWarRoomGlobe() {
@@ -1234,7 +1350,7 @@ function initWarRoomGlobe() {
             .backgroundColor('rgba(5,10,20,0)')
             .showAtmosphere(true).atmosphereColor('#64ffda').atmosphereAltitude(0.15)
             .pointLat('lat').pointLng('lng').pointColor('color')
-            .pointAltitude(d => (d.size || 0.5) * 0.06)
+            .pointAltitude(d => d.alt ? Math.min(0.18, d.alt / 280000) : (d.size || 0.5) * 0.06)
             .pointRadius(d => (d.size || 0.5) * 0.35)
             .pointLabel(d => d.name || '')
             .arcStartLat('startLat').arcStartLng('startLng')
@@ -1248,6 +1364,7 @@ function initWarRoomGlobe() {
         warRoomGlobe.controls().autoRotateSpeed = 0.35;
     }
     warRoomGlobe.width(el.clientWidth).height(el.clientHeight);
+    applyCountryLabels();
     updateGlobeLayers();
 }
 
