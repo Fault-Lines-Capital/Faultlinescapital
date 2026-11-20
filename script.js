@@ -315,7 +315,7 @@ function updateLayerCount() {
 
 function getVisiblePoints() {
     const active = getActiveLayers();
-    const points = [];
+    const points = [...AMBIENT_NODES];
     POINT_LAYERS.forEach(key => {
         if (!active[key]) return;
         if (key === 'earthquakes') { points.push(...earthquakeData); return; }
@@ -326,14 +326,25 @@ function getVisiblePoints() {
 
 function getVisibleArcs() {
     const active = getActiveLayers();
-    const arcs = [];
+    const arcs = AMBIENT_ARCS.map(a => ({ ...a }));
     ARC_LAYERS.forEach(key => { if (active[key] && WAR_ROOM_DATA[key]) arcs.push(...WAR_ROOM_DATA[key]); });
     return arcs;
 }
 
 function getVisibleRings() {
     const active = getActiveLayers();
-    const rings = [];
+    const rings = AMBIENT_NODES.map((n, i) => ({
+        lat: n.lat,
+        lng: n.lng,
+        maxR: 2.8 + (i % 3),
+        propagationSpeed: 1.4 + (i % 2) * 0.6,
+        repeatPeriod: 900 + (i % 4) * 220,
+        color: n.color === '#ff4d4d'
+            ? 'rgba(255,77,77,0.45)'
+            : n.color === '#3d7eff'
+                ? 'rgba(61,126,255,0.4)'
+                : 'rgba(100,255,218,0.4)'
+    }));
     if (active.conflict) {
         WAR_ROOM_DATA.conflict.forEach(p => rings.push({
             lat: p.lat, lng: p.lng, maxR: 4, propagationSpeed: 2, repeatPeriod: 1200, color: 'rgba(255,0,0,0.35)'
@@ -434,7 +445,6 @@ async function switchTab(type, element) {
         } else if (type === 'finance') {
             document.getElementById('finance-view').classList.remove('hidden');
             initCharts();
-            startMarketSensors();
             const posts = await loadPosts();
             renderFeed('fin-feed', posts.filter(p => p.category === 'finance'));
         } else if (type === 'map') {
@@ -1262,6 +1272,41 @@ function toggleCountryNames() {
     applyCountryLabels();
 }
 
+let hoveredCountry = null;
+
+const AMBIENT_ARCS = [
+    { startLat: 38.9, startLng: -77.0, endLat: 51.5, endLng: -0.1, color: '#3d7eff' },
+    { startLat: 55.75, startLng: 37.6, endLat: 39.9, endLng: 116.4, color: '#ff4d4d' },
+    { startLat: 28.6, startLng: 77.2, endLat: 1.3, endLng: 103.8, color: '#64ffda' },
+    { startLat: 35.7, startLng: 139.7, endLat: 34.0, endLng: -118.2, color: '#3d7eff' },
+    { startLat: 25.2, startLng: 55.3, endLat: 51.5, endLng: -0.1, color: '#64ffda' },
+    { startLat: -23.5, startLng: -46.6, endLat: 40.7, endLng: -74.0, color: '#3d7eff' },
+    { startLat: -33.9, startLng: 18.4, endLat: 1.3, endLng: 103.8, color: '#ff4d4d' },
+    { startLat: 48.9, startLng: 2.3, endLat: 35.7, endLng: 51.4, color: '#ff4d4d' },
+    { startLat: 39.9, startLng: 116.4, endLat: -33.9, endLng: 151.2, color: '#64ffda' },
+    { startLat: 52.5, startLng: 13.4, endLat: 41.9, endLng: 12.5, color: '#3d7eff' },
+    { startLat: 19.4, startLng: -99.1, endLat: 40.7, endLng: -74.0, color: '#64ffda' },
+    { startLat: 37.6, startLng: 126.9, endLat: 35.7, endLng: 139.7, color: '#ff4d4d' },
+    { startLat: 24.5, startLng: 54.4, endLat: 28.6, endLng: 77.2, color: '#3d7eff' },
+    { startLat: 55.8, startLng: 37.6, endLat: 52.5, endLng: 13.4, color: '#ff4d4d' },
+    { startLat: 1.3, startLng: 103.8, endLat: 22.3, endLng: 114.2, color: '#64ffda' },
+];
+
+const AMBIENT_NODES = [
+    { lat: 51.5, lng: -0.1, size: 0.45, color: '#3d7eff', name: 'London' },
+    { lat: 40.7, lng: -74.0, size: 0.45, color: '#3d7eff', name: 'New York' },
+    { lat: 35.7, lng: 139.7, size: 0.45, color: '#64ffda', name: 'Tokyo' },
+    { lat: 1.3, lng: 103.8, size: 0.4, color: '#64ffda', name: 'Singapore' },
+    { lat: 25.2, lng: 55.3, size: 0.4, color: '#ff4d4d', name: 'Dubai' },
+    { lat: 28.6, lng: 77.2, size: 0.45, color: '#64ffda', name: 'New Delhi' },
+    { lat: 39.9, lng: 116.4, size: 0.45, color: '#ff4d4d', name: 'Beijing' },
+    { lat: 55.75, lng: 37.6, size: 0.45, color: '#ff4d4d', name: 'Moscow' },
+    { lat: -33.9, lng: 151.2, size: 0.35, color: '#3d7eff', name: 'Sydney' },
+    { lat: -23.5, lng: -46.6, size: 0.35, color: '#3d7eff', name: 'São Paulo' },
+    { lat: 48.9, lng: 2.3, size: 0.35, color: '#64ffda', name: 'Paris' },
+    { lat: 37.6, lng: 126.9, size: 0.35, color: '#ff4d4d', name: 'Seoul' },
+];
+
 function applyCountryLabels() {
     if (!warRoomGlobe) return;
     warRoomGlobe
@@ -1269,10 +1314,22 @@ function applyCountryLabels() {
         .labelLat('lat')
         .labelLng('lng')
         .labelText('name')
-        .labelSize(0.45)
-        .labelColor(() => 'rgba(232, 237, 244, 0.92)')
-        .labelAltitude(0.012)
-        .labelDotRadius(0);
+        .labelSize(d => (hoveredCountry && hoveredCountry.name === d.name) ? 1.45 : 0.85)
+        .labelColor(d => (hoveredCountry && hoveredCountry.name === d.name)
+            ? 'rgba(255, 90, 90, 1)'
+            : 'rgba(180, 255, 235, 0.98)')
+        .labelAltitude(d => (hoveredCountry && hoveredCountry.name === d.name) ? 0.05 : 0.02)
+        .labelDotRadius(d => (hoveredCountry && hoveredCountry.name === d.name) ? 0.55 : 0.22)
+        .labelDotOrientation(() => 'bottom')
+        .labelResolution(3)
+        .labelIncludeDot(true)
+        .onLabelHover(label => {
+            hoveredCountry = label || null;
+            applyCountryLabels();
+            if (warRoomGlobe) {
+                warRoomGlobe.controls().autoRotate = !label;
+            }
+        });
 }
 
 const FIGHTER_TYPES = /^(F1[4568]|F22|F35|FA18|EUFI|RFAL|SB39|SU2|SU3|MG29|MG31|J10|J20|J16|A10|TYP|GRIP|F2$)/i;
@@ -1339,6 +1396,37 @@ function startLiveTrackers() {
     if (!trackerTimer) trackerTimer = setInterval(refreshLiveTrackers, 60000);
 }
 
+function setupGlobeControls(el) {
+    const controls = warRoomGlobe.controls();
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.rotateSpeed = 1.15;
+    controls.zoomSpeed = 0.9;
+    controls.enablePan = false;
+    controls.minDistance = 140;
+    controls.maxDistance = 520;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.28;
+
+    let resumeTimer = null;
+    const pauseSpin = () => {
+        controls.autoRotate = false;
+        if (resumeTimer) clearTimeout(resumeTimer);
+    };
+    const resumeSpin = () => {
+        if (resumeTimer) clearTimeout(resumeTimer);
+        resumeTimer = setTimeout(() => {
+            if (!hoveredCountry) controls.autoRotate = true;
+        }, 1800);
+    };
+
+    el.addEventListener('pointerdown', pauseSpin, { passive: true });
+    el.addEventListener('pointerup', resumeSpin, { passive: true });
+    el.addEventListener('pointerleave', resumeSpin, { passive: true });
+    el.addEventListener('touchstart', pauseSpin, { passive: true });
+    el.addEventListener('touchend', resumeSpin, { passive: true });
+}
+
 function initWarRoomGlobe() {
     const el = document.getElementById('war-room-globe');
     if (!el || typeof Globe === 'undefined') return;
@@ -1348,20 +1436,19 @@ function initWarRoomGlobe() {
             .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-night.jpg')
             .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
             .backgroundColor('rgba(5,10,20,0)')
-            .showAtmosphere(true).atmosphereColor('#64ffda').atmosphereAltitude(0.15)
+            .showAtmosphere(true).atmosphereColor('#64ffda').atmosphereAltitude(0.18)
             .pointLat('lat').pointLng('lng').pointColor('color')
             .pointAltitude(d => d.alt ? Math.min(0.18, d.alt / 280000) : (d.size || 0.5) * 0.06)
             .pointRadius(d => (d.size || 0.5) * 0.35)
             .pointLabel(d => d.name || '')
             .arcStartLat('startLat').arcStartLng('startLng')
             .arcEndLat('endLat').arcEndLng('endLng')
-            .arcColor(d => [d.color, d.color])
-            .arcAltitude(0.12).arcStroke(0.5)
-            .arcDashLength(0.4).arcDashGap(0.3).arcDashAnimateTime(3000)
+            .arcColor(d => [d.color || '#64ffda', d.color || '#3d7eff'])
+            .arcAltitude(0.18).arcStroke(0.65)
+            .arcDashLength(0.35).arcDashGap(0.2).arcDashAnimateTime(2200)
             .ringLat('lat').ringLng('lng').ringColor('color')
             .ringMaxRadius('maxR').ringPropagationSpeed('propagationSpeed').ringRepeatPeriod('repeatPeriod');
-        warRoomGlobe.controls().autoRotate = true;
-        warRoomGlobe.controls().autoRotateSpeed = 0.35;
+        setupGlobeControls(el);
     }
     warRoomGlobe.width(el.clientWidth).height(el.clientHeight);
     applyCountryLabels();
