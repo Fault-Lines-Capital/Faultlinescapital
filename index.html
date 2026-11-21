@@ -146,6 +146,10 @@
     <div id="article-viewer" class="viewer">
         <div class="viewer-inner">
             <button class="close-btn" onclick="closeArticle()">← Back</button>
+            <button type="button" class="audio-btn" id="article-audio-btn" aria-pressed="false" aria-label="Listen to article" onclick="toggleArticleAudio()">
+                <span class="audio-btn-icon" aria-hidden="true">▶</span>
+                <span class="audio-btn-label">Listen</span>
+            </button>
             <article class="article-reader" id="article-reader">
                 <div class="article-watermark" id="article-watermark" aria-hidden="true"></div>
                 <div class="article-meta" id="article-meta-bar">
@@ -163,7 +167,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/globe.gl"></script>
     <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-    <script src="posts-data.js?v=20"></script>
-    <script src="script.js?v=20"></script>
+    <script src="posts-data.js?v=22"></script>
+    <script src="script.js?v=22"></script>
 </body>
 </html>

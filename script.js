@@ -574,16 +574,107 @@ function renderFeed(id, posts) {
     });
 }
 
+let currentArticlePost = null;
+let articleAudioOn = false;
+let speechKeepAlive = null;
+
+function setAudioButtonState(on) {
+    const btn = document.getElementById('article-audio-btn');
+    if (!btn) return;
+    articleAudioOn = !!on;
+    btn.classList.toggle('is-on', articleAudioOn);
+    btn.setAttribute('aria-pressed', articleAudioOn ? 'true' : 'false');
+    btn.querySelector('.audio-btn-icon').textContent = articleAudioOn ? '■' : '▶';
+    btn.querySelector('.audio-btn-label').textContent = articleAudioOn ? 'Stop' : 'Listen';
+}
+
+function stopArticleAudio() {
+    if (speechKeepAlive) {
+        clearInterval(speechKeepAlive);
+        speechKeepAlive = null;
+    }
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    setAudioButtonState(false);
+}
+
+function pickArticleVoice() {
+    const voices = window.speechSynthesis?.getVoices?.() || [];
+    if (!voices.length) return null;
+    return voices.find(v => /en(-|_)?(US|GB|IN|AU)/i.test(v.lang) && /natural|enhanced|neural|premium|samantha|daniel|ravi|karen|moira/i.test(v.name))
+        || voices.find(v => /en(-|_)?(US|GB|IN|AU)/i.test(v.lang) && /google|microsoft|apple/i.test(v.name))
+        || voices.find(v => /^en/i.test(v.lang))
+        || voices[0];
+}
+
+function getArticleSpeakText(post) {
+    if (!post) return '';
+    const parts = [
+        post.title || '',
+        post.author ? `By ${post.author}.` : '',
+        post.content || post.excerpt || ''
+    ];
+    return parts.join('\n\n')
+        .replace(/\bPART\s+[IVXLC\d]+[:.]?\s*/gi, '')
+        .replace(/\bCONCLUSION[:.]?\s*/gi, '')
+        .replace(/\bSources?:[\s\S]*$/i, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function startArticleAudio(post) {
+    if (!window.speechSynthesis) {
+        alert('Voice playback is not supported in this browser.');
+        return;
+    }
+    const text = getArticleSpeakText(post);
+    if (!text) return;
+
+    stopArticleAudio();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.96;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    const voice = pickArticleVoice();
+    if (voice) utterance.voice = voice;
+    utterance.onend = () => stopArticleAudio();
+    utterance.onerror = () => stopArticleAudio();
+    setAudioButtonState(true);
+    window.speechSynthesis.speak(utterance);
+    if (speechKeepAlive) clearInterval(speechKeepAlive);
+    speechKeepAlive = setInterval(() => {
+        if (!window.speechSynthesis.speaking) {
+            clearInterval(speechKeepAlive);
+            speechKeepAlive = null;
+            return;
+        }
+        window.speechSynthesis.pause();
+        window.speechSynthesis.resume();
+    }, 12000);
+}
+
+function toggleArticleAudio() {
+    if (articleAudioOn) {
+        stopArticleAudio();
+        return;
+    }
+    startArticleAudio(currentArticlePost);
+}
+
 function openArticle(post) {
     if (!post) return;
+    stopArticleAudio();
+    currentArticlePost = post;
     const viewer = document.getElementById('article-viewer');
     const articleReader = document.getElementById('article-reader');
+    const audioBtn = document.getElementById('article-audio-btn');
     const isPdf = post.file?.endsWith('.pdf');
 
     document.body.style.overflow = 'hidden';
     viewer.style.display = 'block';
     viewer.classList.add('active');
     viewer.classList.toggle('viewer--pdf', isPdf);
+    audioBtn?.classList.toggle('is-hidden', isPdf);
+    setAudioButtonState(false);
 
     document.getElementById('art-title').innerText = post.title;
     document.getElementById('art-category').innerText = (post.category || '').toUpperCase();
@@ -660,12 +751,19 @@ async function renderPdfDocument(url, container) {
 }
 
 function closeArticle() {
+    stopArticleAudio();
+    currentArticlePost = null;
     const viewer = document.getElementById('article-viewer');
     document.getElementById('article-reader')?.classList.remove('has-watermark');
     viewer.classList.remove('active', 'viewer--pdf');
     viewer.style.display = 'none';
     document.body.style.overflow = '';
     document.getElementById('art-body').innerHTML = '';
+}
+
+if (typeof window !== 'undefined' && window.speechSynthesis) {
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
 }
 
 // ═══════════════════════════════════════════════════════════
