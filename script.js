@@ -577,18 +577,22 @@ function renderFeed(id, posts) {
 let currentArticlePost = null;
 let articleAudioOn = false;
 let speechKeepAlive = null;
+let speechQueue = [];
+let cachedPdfText = '';
 
 function setAudioButtonState(on) {
     const btn = document.getElementById('article-audio-btn');
     if (!btn) return;
     articleAudioOn = !!on;
     btn.classList.toggle('is-on', articleAudioOn);
+    btn.classList.remove('is-hidden');
     btn.setAttribute('aria-pressed', articleAudioOn ? 'true' : 'false');
     btn.querySelector('.audio-btn-icon').textContent = articleAudioOn ? '■' : '▶';
     btn.querySelector('.audio-btn-label').textContent = articleAudioOn ? 'Stop' : 'Listen';
 }
 
 function stopArticleAudio() {
+    speechQueue = [];
     if (speechKeepAlive) {
         clearInterval(speechKeepAlive);
         speechKeepAlive = null;
@@ -600,56 +604,187 @@ function stopArticleAudio() {
 function pickArticleVoice() {
     const voices = window.speechSynthesis?.getVoices?.() || [];
     if (!voices.length) return null;
-    return voices.find(v => /en(-|_)?(US|GB|IN|AU)/i.test(v.lang) && /natural|enhanced|neural|premium|samantha|daniel|ravi|karen|moira/i.test(v.name))
-        || voices.find(v => /en(-|_)?(US|GB|IN|AU)/i.test(v.lang) && /google|microsoft|apple/i.test(v.name))
-        || voices.find(v => /^en/i.test(v.lang))
-        || voices[0];
+    const scored = voices.map(v => {
+        let score = 0;
+        const name = v.name || '';
+        const lang = v.lang || '';
+        if (/^en/i.test(lang)) score += 20;
+        if (/en(-|_)?(US|GB|IN|AU)/i.test(lang)) score += 10;
+        if (/natural|neural|enhanced|premium|super|wavenet|journey|studio/i.test(name)) score += 40;
+        if (/samantha|daniel|aaron|arthur|martha|moira|karen|ravi|google uk|google us|microsoft aria|microsoft guy|microsoft jenny|siri/i.test(name)) score += 25;
+        if (/google|microsoft|apple|amazon/i.test(name)) score += 12;
+        if (v.localService) score += 4;
+        if (/compact|eloquence|whisper/i.test(name)) score -= 15;
+        return { v, score };
+    }).sort((a, b) => b.score - a.score);
+    return scored[0]?.v || voices[0];
 }
 
-function getArticleSpeakText(post) {
-    if (!post) return '';
-    const parts = [
-        post.title || '',
-        post.author ? `By ${post.author}.` : '',
-        post.content || post.excerpt || ''
-    ];
-    return parts.join('\n\n')
-        .replace(/\bPART\s+[IVXLC\d]+[:.]?\s*/gi, '')
-        .replace(/\bCONCLUSION[:.]?\s*/gi, '')
+function cleanSpeakChunk(text) {
+    return String(text || '')
         .replace(/\bSources?:[\s\S]*$/i, '')
+        .replace(/https?:\/\/\S+/g, '')
+        .replace(/[*#_>`]/g, '')
         .replace(/\s+/g, ' ')
         .trim();
 }
 
-function startArticleAudio(post) {
+function humanizeHeading(heading) {
+    return cleanSpeakChunk(heading)
+        .replace(/^PART\s+([IVXLC\d]+)[:.\-\s]*/i, 'Part $1. ')
+        .replace(/^CONCLUSION[:.\-\s]*/i, 'Conclusion. ')
+        .replace(/\s*—\s*/g, '. ')
+        .replace(/\s*-\s*/g, '. ');
+}
+
+function splitIntoSentences(text) {
+    const clean = cleanSpeakChunk(text);
+    if (!clean) return [];
+    return clean
+        .replace(/([.!?])\s+/g, '$1|||')
+        .replace(/([;:])\s+/g, '$1|||')
+        .split('|||')
+        .map(s => s.trim())
+        .filter(Boolean);
+}
+
+function buildNarrationQueue(post, bodyText) {
+    const queue = [];
+    const title = cleanSpeakChunk(post.title || 'this briefing');
+    queue.push({ text: `This Fault Lines Capital briefing is titled: ${title}.`, pauseAfter: 1600, rate: 0.9 });
+    if (post.author) {
+        queue.push({ text: `Written by ${post.author}.`, pauseAfter: 1200, rate: 0.92 });
+    }
+    queue.push({ text: 'Here is the full analysis.', pauseAfter: 1400, rate: 0.92 });
+
+    const raw = String(bodyText || post.content || post.excerpt || '')
+        .replace(/\bSources?:[\s\S]*$/i, '')
+        .trim();
+
+    const blocks = raw.split(/\n{2,}/).map(b => b.trim()).filter(Boolean);
+    blocks.forEach(block => {
+        const firstLine = block.split('\n')[0].trim();
+        const looksLikeHeading = /^(PART\s+[IVXLC\d]+|CONCLUSION)\b/i.test(firstLine);
+
+        if (looksLikeHeading) {
+            const heading = humanizeHeading(firstLine);
+            queue.push({ text: heading, pauseAfter: 1600, rate: 0.88 });
+            const rest = block.slice(firstLine.length).trim();
+            splitIntoSentences(rest).forEach((sentence, i, arr) => {
+                const endPause = /[.!?]$/.test(sentence) ? (i === arr.length - 1 ? 900 : 450) : 280;
+                queue.push({ text: sentence, pauseAfter: endPause, rate: 0.94 });
+            });
+            return;
+        }
+
+        splitIntoSentences(block).forEach((sentence, i, arr) => {
+            let pause = 320;
+            if (/[.!?]$/.test(sentence)) pause = i === arr.length - 1 ? 850 : 480;
+            if (/[,;:]$/.test(sentence)) pause = 260;
+            if (sentence.length > 180) pause += 180;
+            queue.push({ text: sentence, pauseAfter: pause, rate: 0.94 });
+        });
+        queue.push({ text: '', pauseAfter: 700 });
+    });
+
+    return queue.filter(item => item.text || item.pauseAfter);
+}
+
+async function extractPdfText(url) {
+    if (cachedPdfText) return cachedPdfText;
+    if (typeof pdfjsLib === 'undefined') return '';
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf = await pdfjsLib.getDocument(url).promise;
+    let text = '';
+    for (let n = 1; n <= pdf.numPages; n++) {
+        const page = await pdf.getPage(n);
+        const content = await page.getTextContent();
+        text += content.items.map(item => item.str).join(' ') + '\n\n';
+    }
+    cachedPdfText = cleanSpeakChunk(text);
+    return cachedPdfText;
+}
+
+async function resolveArticleBodyText(post) {
+    if (post?.content) return post.content;
+    if (post?.file?.endsWith('.pdf')) {
+        try { return await extractPdfText(post.file); } catch (_) { return post.excerpt || ''; }
+    }
+    const body = document.getElementById('art-body');
+    const fromDom = body?.innerText?.trim();
+    return fromDom || post?.excerpt || '';
+}
+
+function speakNextInQueue() {
+    if (!articleAudioOn) return;
+    if (!speechQueue.length) {
+        stopArticleAudio();
+        return;
+    }
+
+    const item = speechQueue.shift();
+    if (!item.text) {
+        setTimeout(() => speakNextInQueue(), item.pauseAfter || 700);
+        return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(item.text);
+    const voice = pickArticleVoice();
+    if (voice) utterance.voice = voice;
+    utterance.rate = item.rate || 0.94;
+    utterance.pitch = 0.96;
+    utterance.volume = 1;
+    utterance.onend = () => {
+        if (!articleAudioOn) return;
+        setTimeout(() => speakNextInQueue(), item.pauseAfter || 400);
+    };
+    utterance.onerror = () => {
+        if (!articleAudioOn) return;
+        setTimeout(() => speakNextInQueue(), 300);
+    };
+    window.speechSynthesis.speak(utterance);
+}
+
+async function startArticleAudio(post) {
     if (!window.speechSynthesis) {
         alert('Voice playback is not supported in this browser.');
         return;
     }
-    const text = getArticleSpeakText(post);
-    if (!text) return;
+    if (!post) return;
 
     stopArticleAudio();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.96;
-    utterance.pitch = 1;
-    utterance.volume = 1;
-    const voice = pickArticleVoice();
-    if (voice) utterance.voice = voice;
-    utterance.onend = () => stopArticleAudio();
-    utterance.onerror = () => stopArticleAudio();
     setAudioButtonState(true);
-    window.speechSynthesis.speak(utterance);
-    if (speechKeepAlive) clearInterval(speechKeepAlive);
-    speechKeepAlive = setInterval(() => {
-        if (!window.speechSynthesis.speaking) {
-            clearInterval(speechKeepAlive);
-            speechKeepAlive = null;
+    const btn = document.getElementById('article-audio-btn');
+    if (btn) btn.querySelector('.audio-btn-label').textContent = 'Loading…';
+
+    try {
+        const bodyText = await resolveArticleBodyText(post);
+        speechQueue = buildNarrationQueue(post, bodyText);
+        if (!speechQueue.length) {
+            stopArticleAudio();
             return;
         }
-        window.speechSynthesis.pause();
-        window.speechSynthesis.resume();
-    }, 12000);
+        setAudioButtonState(true);
+        window.speechSynthesis.cancel();
+        speakNextInQueue();
+        if (speechKeepAlive) clearInterval(speechKeepAlive);
+        speechKeepAlive = setInterval(() => {
+            if (!window.speechSynthesis.speaking && !speechQueue.length) {
+                clearInterval(speechKeepAlive);
+                speechKeepAlive = null;
+                return;
+            }
+            if (window.speechSynthesis.speaking) {
+                window.speechSynthesis.pause();
+                window.speechSynthesis.resume();
+            }
+        }, 12000);
+    } catch (e) {
+        console.error('Audio error:', e);
+        stopArticleAudio();
+        alert('Could not start the voiceover for this article.');
+    }
 }
 
 function toggleArticleAudio() {
@@ -664,6 +799,7 @@ function openArticle(post) {
     if (!post) return;
     stopArticleAudio();
     currentArticlePost = post;
+    cachedPdfText = '';
     const viewer = document.getElementById('article-viewer');
     const articleReader = document.getElementById('article-reader');
     const audioBtn = document.getElementById('article-audio-btn');
@@ -673,7 +809,7 @@ function openArticle(post) {
     viewer.style.display = 'block';
     viewer.classList.add('active');
     viewer.classList.toggle('viewer--pdf', isPdf);
-    audioBtn?.classList.toggle('is-hidden', isPdf);
+    audioBtn?.classList.remove('is-hidden');
     setAudioButtonState(false);
 
     document.getElementById('art-title').innerText = post.title;
