@@ -601,23 +601,30 @@ function stopArticleAudio() {
     setAudioButtonState(false);
 }
 
+const MALE_VOICE_RE = /\b(male|man|daniel|david|thomas|aaron|arthur|james|john|mark|nathan|oliver|ravi|fred|alex|bruce|tom|eddy|guy|eric|george|gordon|lee|reed|ryan|sam|will|william|matthew|noah|albert|baritone|bass)\b/i;
+const FEMALE_VOICE_RE = /\b(female|woman|samantha|karen|moira|fiona|tessa|veena|victoria|zira|susan|linda|kathy|princess|martha|aria|jenny|sara|sonia|emma|ava|allison|zoe|siri|female)\b/i;
+
 function pickArticleVoice() {
     const voices = window.speechSynthesis?.getVoices?.() || [];
     if (!voices.length) return null;
     const scored = voices.map(v => {
         let score = 0;
-        const name = v.name || '';
+        const name = `${v.name || ''} ${v.voiceURI || ''}`;
         const lang = v.lang || '';
-        if (/^en/i.test(lang)) score += 20;
-        if (/en(-|_)?(US|GB|IN|AU)/i.test(lang)) score += 10;
-        if (/natural|neural|enhanced|premium|super|wavenet|journey|studio/i.test(name)) score += 40;
-        if (/samantha|daniel|aaron|arthur|martha|moira|karen|ravi|google uk|google us|microsoft aria|microsoft guy|microsoft jenny|siri/i.test(name)) score += 25;
-        if (/google|microsoft|apple|amazon/i.test(name)) score += 12;
-        if (v.localService) score += 4;
-        if (/compact|eloquence|whisper/i.test(name)) score -= 15;
+        if (/^en/i.test(lang)) score += 25;
+        if (/en(-|_)?(US|GB|IN|AU)/i.test(lang)) score += 12;
+        if (MALE_VOICE_RE.test(name)) score += 55;
+        if (FEMALE_VOICE_RE.test(name)) score -= 80;
+        if (/natural|neural|enhanced|premium|super|wavenet|journey|studio|online/i.test(name)) score += 35;
+        if (/google|microsoft|apple|amazon/i.test(name)) score += 14;
+        if (/daniel|aaron|arthur|microsoft guy|google uk english male|google us english male|alex|david|ravi/i.test(name)) score += 30;
+        if (v.localService) score += 3;
+        if (/compact|eloquence|whisper|novelty/i.test(name)) score -= 20;
         return { v, score };
     }).sort((a, b) => b.score - a.score);
-    return scored[0]?.v || voices[0];
+
+    const maleFirst = scored.find(s => MALE_VOICE_RE.test(`${s.v.name || ''} ${s.v.voiceURI || ''}`) && !FEMALE_VOICE_RE.test(`${s.v.name || ''}`));
+    return maleFirst?.v || scored.find(s => s.score > 0)?.v || scored[0]?.v || voices[0];
 }
 
 function cleanSpeakChunk(text) {
@@ -651,28 +658,37 @@ function splitIntoSentences(text) {
 function buildNarrationQueue(post, bodyText) {
     const queue = [];
     const title = cleanSpeakChunk(post.title || 'this briefing');
-    queue.push({ text: `This Fault Lines Capital briefing is titled: ${title}.`, pauseAfter: 1600, rate: 0.9 });
+    // Hook: slight energy rise, still same script structure and pause timing.
+    queue.push({ text: `This Fault Lines Capital briefing is titled: ${title}.`, pauseAfter: 1600, rate: 1.05, pitch: 0.98, emphasis: true });
     if (post.author) {
-        queue.push({ text: `Written by ${post.author}.`, pauseAfter: 1200, rate: 0.92 });
+        queue.push({ text: `Written by ${post.author}.`, pauseAfter: 1200, rate: 1.0, pitch: 0.92 });
     }
-    queue.push({ text: 'Here is the full analysis.', pauseAfter: 1400, rate: 0.92 });
+    queue.push({ text: 'Here is the full analysis.', pauseAfter: 1400, rate: 1.02, pitch: 0.94 });
 
     const raw = String(bodyText || post.content || post.excerpt || '')
         .replace(/\bSources?:[\s\S]*$/i, '')
         .trim();
 
     const blocks = raw.split(/\n{2,}/).map(b => b.trim()).filter(Boolean);
-    blocks.forEach(block => {
+    blocks.forEach((block, blockIndex) => {
         const firstLine = block.split('\n')[0].trim();
         const looksLikeHeading = /^(PART\s+[IVXLC\d]+|CONCLUSION)\b/i.test(firstLine);
+        const isLastBlock = blockIndex === blocks.length - 1;
 
         if (looksLikeHeading) {
             const heading = humanizeHeading(firstLine);
-            queue.push({ text: heading, pauseAfter: 1600, rate: 0.88 });
+            queue.push({ text: heading, pauseAfter: 1600, rate: 0.98, pitch: 0.93 });
             const rest = block.slice(firstLine.length).trim();
             splitIntoSentences(rest).forEach((sentence, i, arr) => {
                 const endPause = /[.!?]$/.test(sentence) ? (i === arr.length - 1 ? 900 : 450) : 280;
-                queue.push({ text: sentence, pauseAfter: endPause, rate: 0.94 });
+                const isCta = isLastBlock && i === arr.length - 1;
+                queue.push({
+                    text: sentence,
+                    pauseAfter: endPause,
+                    rate: isCta ? 1.04 : 1.02,
+                    pitch: isCta ? 0.97 : 0.92,
+                    emphasis: isCta
+                });
             });
             return;
         }
@@ -682,7 +698,14 @@ function buildNarrationQueue(post, bodyText) {
             if (/[.!?]$/.test(sentence)) pause = i === arr.length - 1 ? 850 : 480;
             if (/[,;:]$/.test(sentence)) pause = 260;
             if (sentence.length > 180) pause += 180;
-            queue.push({ text: sentence, pauseAfter: pause, rate: 0.94 });
+            const isCta = isLastBlock && i === arr.length - 1;
+            queue.push({
+                text: sentence,
+                pauseAfter: pause,
+                rate: isCta ? 1.04 : 1.02,
+                pitch: isCta ? 0.97 : 0.92,
+                emphasis: isCta
+            });
         });
         queue.push({ text: '', pauseAfter: 700 });
     });
@@ -732,9 +755,10 @@ function speakNextInQueue() {
     const utterance = new SpeechSynthesisUtterance(item.text);
     const voice = pickArticleVoice();
     if (voice) utterance.voice = voice;
-    utterance.rate = item.rate || 0.94;
-    utterance.pitch = 0.96;
-    utterance.volume = 1;
+    // Deep, confident male delivery: lower pitch, medium-fast pace, clear volume.
+    utterance.rate = item.rate || 1.02;
+    utterance.pitch = item.pitch != null ? item.pitch : 0.9;
+    utterance.volume = item.emphasis ? 1 : 0.96;
     utterance.onend = () => {
         if (!articleAudioOn) return;
         setTimeout(() => speakNextInQueue(), item.pauseAfter || 400);
